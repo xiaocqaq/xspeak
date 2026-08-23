@@ -105,6 +105,7 @@ export function grammarPrompt(
     '1. mini_lesson_zh 必须点明"中文会怎么说，英文必须怎么说"的差别。',
     '2. exercises 要混合题型：至少一道改错（fix）、一道中译英（translate）。',
     '3. 改错题的错误必须是中文母语者真会犯的，不要造不自然的错。',
+    '4. kind=choice 的题给四个 options；fix / translate 的题不要带 options 字段。',
     mistakeBlock(ctx.mistakes),
   ].join('\n');
 }
@@ -208,6 +209,43 @@ export function chatSystemPrompt(
     '4. 学生卡住或说中文时，用 suggestion_en 给他一个能直接照说的句子。',
     '5. 主动把话题往需要用上目标词的方向引，但不要生硬地命令他用某个词。',
   ].join('\n');
+}
+
+/**
+ * 畅聊模式的旁路分析。
+ *
+ * 和 chatSystemPrompt 的区别：这里不生成回复 —— 回复由端到端语音模型直接出。
+ * 这一路只负责「学生刚说的这句话有没有问题」和「有没有用上目标词」，
+ * 结果异步补到界面上并进错题本。
+ *
+ * 输入是 ASR 转写，所以必须容忍口语特征：识别可能漏词、把 gonna 写成 going to、
+ * 没有标点。只挑真正的语言错误，不要把转写噪声当成学生的错。
+ */
+export function coachingPrompt(
+  l: Learner,
+  opts: { scenarioZh: string; targetWords: string[]; userText: string; history: string },
+): string {
+  return [
+    systemPrompt(l),
+    '',
+    '学生正在做口语畅聊练习。你不需要回复他 —— 语音那一路已经回了。',
+    '你只负责一件事：看他刚说的这句话，指出该纠正的地方。',
+    '',
+    `情境：${opts.scenarioZh}`,
+    opts.targetWords.length ? `今天希望他说出口的词：${opts.targetWords.join(', ')}` : '',
+    opts.history ? `\n之前几轮：\n${opts.history}` : '',
+    '',
+    `学生刚说（语音识别转写）：${opts.userText}`,
+    '',
+    '判断要求：',
+    '1. 这是语音转写，没有标点、可能漏词或把口语缩略写成完整形式。这些都不算错，不要纠。',
+    '2. 只挑真正的语言问题：语法错、用词不当、中式表达。发音问题这里看不出来，不要猜。',
+    '3. 没有值得纠的就把 has_issue 设为 false，corrected_en 原样返回他的话，note_zh 给一句简短鼓励。',
+    `4. corrected_en 要贴近 ${l.level}，改成他这个水平真能说出口的样子，不要改写成高级表达。`,
+    '5. used_target_words 只填他确实说出来的目标词，同义替换不算。',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function lookupPrompt(l: Learner, term: string, context: string | null): string {

@@ -3,7 +3,7 @@ import { body, currentUser, handle } from '@/lib/api';
 import { generateJson } from '@/lib/ai/client';
 import { ExtractPayload } from '@/lib/ai/schemas';
 import { extractPrompt, systemPrompt, type Learner } from '@/lib/ai/prompts';
-import { getDb } from '@/lib/db';
+import { all, one } from '@/lib/db';
 import { enrollWords, upsertWordFromAi } from '@/lib/repo/words';
 
 export const runtime = 'nodejs';
@@ -24,9 +24,8 @@ const Body = z.object({
  */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, Body);
-    const db = getDb();
     const learner: Learner = {
       name: user.name,
       level: user.level,
@@ -43,25 +42,28 @@ export async function POST(req: Request) {
       toolName: 'emit_extract',
     });
 
-    const info = db
-      .prepare(
-        `INSERT INTO materials (user_id, title, kind, raw, summary_zh, word_count, extracted)
-         VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      )
-      .run(
+    const material = await one<{ id: number }>(
+      `INSERT INTO materials (user_id, title, kind, raw, summary_zh, word_count, extracted)
+       VALUES (?, ?, ?, ?, ?, ?, 1) RETURNING id`,
+      [
         user.id,
         result.title || input.title,
         input.kind,
         input.raw,
         result.summary_zh,
         input.raw.split(/\s+/).filter(Boolean).length,
-      );
+      ],
+    );
+    const materialId = material!.id;
 
-    const wordIds = result.words.map((w) => upsertWordFromAi(w, `material:${info.lastInsertRowid}`, user.level));
-    if (input.enroll) enrollWords(user.id, wordIds);
+    const wordIds: number[] = [];
+    for (const w of result.words) {
+      wordIds.push(await upsertWordFromAi(w, `material:${materialId}`, user.level));
+    }
+    if (input.enroll) await enrollWords(user.id, wordIds);
 
     return {
-      materialId: Number(info.lastInsertRowid),
+      materialId,
       title: result.title,
       summaryZh: result.summary_zh,
       words: result.words.map((w, i) => ({ ...w, id: wordIds[i] })),
@@ -73,13 +75,12 @@ export async function POST(req: Request) {
 
 export async function GET() {
   return handle(async () => {
-    const user = currentUser();
-    const rows = getDb()
-      .prepare(
-        `SELECT id, title, kind, summary_zh, word_count, created_at FROM materials
-         WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
-      )
-      .all(user.id);
+    const user = await currentUser();
+    const rows = await all(
+      `SELECT id, title, kind, summary_zh, word_count, created_at FROM materials
+       WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
+      [user.id],
+    );
     return { materials: rows };
   });
 }

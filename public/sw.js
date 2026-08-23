@@ -2,7 +2,7 @@
  * 手写 Service Worker，没用 next-pwa —— 依赖少一个，行为自己说得清。
  *
  * 策略分三类：
- *   1. /api/*        永远走网络。学习进度必须写到 SQLite，缓存住反而会丢数据。
+ *   1. /api/*        永远走网络。学习进度必须写进数据库，缓存住反而会丢数据。
  *                    只有 GET 失败时才回一个明确的离线 JSON，让前端能提示"断网了"。
  *   2. 导航请求       network-first，失败回 /offline。SPA 壳子不预缓存，避免版本错位。
  *   3. 静态资源       stale-while-revalidate。/_next/static 是内容哈希命名的，缓存很安全。

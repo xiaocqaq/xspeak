@@ -1,32 +1,54 @@
 @import 'tailwindcss';
 
-/* Tailwind 4 用 @theme 定义设计变量，不再需要 tailwind.config.js */
+/**
+ * 设计基调：纸质笔记本。
+ *
+ * 三条规则贯穿整套 token，改之前先读一遍，否则很容易把"纸"改回"屏幕"：
+ *
+ * 1. 中性色一律偏暖。纯灰（#888）和冷灰（带蓝）看起来像塑料，
+ *    这里的 ink 刻度全部掺了一点黄褐，暗色模式也是暖黑而不是蓝黑。
+ * 2. 卡片靠阴影浮起，不靠边框切割。硬边框会把版面切成一格格表单，
+ *    纸感来自"一张纸叠在另一张纸上"，所以用极淡的投影 + 几乎看不见的描边。
+ * 3. 强调色只用在真正要看的地方。整页应该是安静的纸，绿色是笔迹，不是背景。
+ */
+
 @theme {
-  --color-ink-50: #f6f7f9;
-  --color-ink-100: #eceef2;
-  --color-ink-200: #d5d9e2;
-  --color-ink-300: #b0b8c7;
-  --color-ink-400: #7d879b;
-  --color-ink-500: #5a6478;
-  --color-ink-600: #414a5c;
-  --color-ink-700: #2f3644;
-  --color-ink-800: #1f2430;
-  --color-ink-900: #14171f;
-  --color-ink-950: #0c0e14;
+  /* 中性色：暖灰，从纸白到墨黑。h 保持在 30-40 之间，越深越降饱和。 */
+  --color-ink-50: #faf8f5;
+  --color-ink-100: #f3efe9;
+  --color-ink-200: #e5dfd5;
+  --color-ink-300: #cec6b8;
+  --color-ink-400: #a39a8b;
+  --color-ink-500: #7d7469;
+  --color-ink-600: #5c554c;
+  --color-ink-700: #423d36;
+  --color-ink-800: #2d2925;
+  --color-ink-900: #1e1b18;
+  --color-ink-950: #141210;
 
-  --color-brand-50: #eef7f4;
-  --color-brand-100: #d5ece5;
-  --color-brand-200: #a9d9cc;
-  --color-brand-300: #74c0ac;
-  --color-brand-400: #46a48c;
-  --color-brand-500: #2c8871;
-  --color-brand-600: #1f6d5b;
-  --color-brand-700: #1b574a;
-  --color-brand-800: #17453c;
-  --color-brand-900: #133932;
+  /* 主色：墨绿，像钢笔的墨水而不是荧光屏的绿。 */
+  --color-brand-50: #eff5f1;
+  --color-brand-100: #d9e9df;
+  --color-brand-200: #b3d2c0;
+  --color-brand-300: #82b499;
+  --color-brand-400: #549476;
+  --color-brand-500: #37785b;
+  --color-brand-600: #2a5f48;
+  --color-brand-700: #234c3a;
+  --color-brand-800: #1d3d2f;
+  --color-brand-900: #183227;
 
-  --color-warm-400: #e0a458;
-  --color-warm-500: #cf8b39;
+  /* 暖色：批注用的赭黄，标重点、标警示。整套刻度都要有，否则类名不生成。 */
+  --color-warm-50: #fdf8ef;
+  --color-warm-100: #faeed6;
+  --color-warm-200: #f2d9ac;
+  --color-warm-300: #e7be79;
+  --color-warm-400: #d9a253;
+  --color-warm-500: #c4863a;
+  --color-warm-600: #a26a2d;
+  --color-warm-700: #7f5225;
+  --color-warm-800: #5f3e1f;
+  --color-warm-900: #4a321b;
 
   --font-sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans SC', sans-serif;
@@ -36,21 +58,34 @@
 :root {
   color-scheme: light dark;
   --bg: var(--color-ink-50);
-  --surface: #ffffff;
+  --surface: #fffdfa;
   --surface-2: var(--color-ink-100);
   --text: var(--color-ink-800);
   --text-dim: var(--color-ink-500);
   --border: var(--color-ink-200);
+  /* 描边比 border 更淡，用在靠阴影浮起的卡片上：只要一点边界暗示，不要切割感 */
+  --hairline: color-mix(in srgb, var(--color-ink-300) 45%, transparent);
+  /* 两级投影。纸是薄的，投影必须小、必须软，大投影会变成"卡片悬浮在空中" */
+  --shadow-paper: 0 1px 2px rgb(66 61 54 / 0.04), 0 2px 8px -2px rgb(66 61 54 / 0.06);
+  --shadow-paper-lifted: 0 2px 4px rgb(66 61 54 / 0.05), 0 8px 20px -6px rgb(66 61 54 / 0.1);
+  /* 横线纸的线条色，用在需要"笔记本"暗示的地方 */
+  --rule-line: color-mix(in srgb, var(--color-brand-300) 22%, transparent);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: var(--color-ink-950);
-    --surface: var(--color-ink-900);
-    --surface-2: var(--color-ink-800);
+    /* 暗色也是暖的：偏棕的深色像夜里的牛皮纸，蓝黑会立刻回到"科技感" */
+    --bg: #16130f;
+    --surface: #201c18;
+    --surface-2: #2b2621;
     --text: var(--color-ink-100);
     --text-dim: var(--color-ink-400);
-    --border: var(--color-ink-700);
+    --border: #3a332c;
+    --hairline: color-mix(in srgb, var(--color-ink-100) 8%, transparent);
+    /* 暗背景上投影看不见，改用微弱的内发光把卡片和背景分开 */
+    --shadow-paper: 0 1px 2px rgb(0 0 0 / 0.3), inset 0 1px 0 rgb(255 255 255 / 0.02);
+    --shadow-paper-lifted: 0 4px 16px -4px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.03);
+    --rule-line: color-mix(in srgb, var(--color-brand-300) 14%, transparent);
   }
 }
 
@@ -64,16 +99,72 @@ body {
   overscroll-behavior-y: none;
 }
 
+/**
+ * 纸张纹理。
+ *
+ * 两层极淡的斜向条纹叠加，模拟纸的纤维。数值刻意压到几乎看不见 ——
+ * 能感觉到"不是纯色块"就够了，一旦看得出条纹就变成装饰背景，反而廉价。
+ * 用 body::before 而不是 background-image，避免影响子元素的层叠。
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      52deg,
+      transparent 0 3px,
+      color-mix(in srgb, var(--color-ink-400) 5%, transparent) 3px 4px
+    ),
+    repeating-linear-gradient(
+      128deg,
+      transparent 0 5px,
+      color-mix(in srgb, var(--color-ink-400) 3%, transparent) 5px 6px
+    );
+}
+
+@media (prefers-color-scheme: dark) {
+  body::before {
+    /* 暗色下纹理要更弱，否则看起来像噪点 */
+    opacity: 0.5;
+  }
+}
+
 /* 英文内容用衬线体，和中文说明形成视觉区分，读起来更像"英文材料" */
 .en {
   font-family: var(--font-serif-en);
   font-feature-settings: 'liga' 1;
 }
 
+/**
+ * 卡片 = 一张纸。
+ * 靠投影和极淡描边浮起，不用实线边框切割版面。
+ */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: 0.875rem;
+  box-shadow: var(--shadow-paper);
+}
+
+/* 需要强调"这张纸更重要"时叠加它，而不是换配色 */
+.card-lifted {
+  box-shadow: var(--shadow-paper-lifted);
+}
+
+/**
+ * 横线纸背景。用在长文本区域（阅读、写作），给出笔记本的暗示。
+ * 行高必须和内容的 line-height 对齐，否则线会穿过文字。
+ */
+.ruled {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0 calc(1.75rem - 1px),
+    var(--rule-line) calc(1.75rem - 1px) 1.75rem
+  );
+  line-height: 1.75rem;
 }
 
 .dim {
@@ -96,11 +187,17 @@ body {
   }
 }
 
-/* 目标词在文中高亮 */
+/**
+ * 目标词高亮 —— 做成荧光笔划过的样子。
+ * 只染文字下半部分、边缘略微不齐，比整块背景色更像手工标记。
+ */
 .target-word {
-  background: color-mix(in srgb, var(--color-warm-400) 28%, transparent);
-  border-bottom: 1.5px solid var(--color-warm-500);
-  border-radius: 0.2rem;
+  background-image: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-warm-300) 55%, transparent) 0 42%,
+    transparent 42%
+  );
+  border-radius: 0.15rem;
   padding: 0 2px;
   font-weight: 500;
 }

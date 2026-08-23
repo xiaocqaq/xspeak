@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { History, Plus } from 'lucide-react';
+import { AudioLines, History, Keyboard, Plus } from 'lucide-react';
 import { Badge, Button, Card, Empty, Spinner } from '@/components/ui';
 import { ChatPanel, type StartConfig } from '@/components/chat-panel';
+import { VoiceChatLauncher } from '@/components/voice-chat-launcher';
 import { apiGet } from '@/lib/fetcher';
 import { cn } from '@/lib/cn';
 
@@ -77,7 +78,19 @@ const SCENARIOS: { key: string; zh: string; hint: string; role: string; opening:
 
 type ConvSummary = { id: number; title: string; created_at: string; msgs: number };
 
+/**
+ * 两种练法，刻意分开：
+ *
+ * - 打字模式（text）：每说一句，AI 当场给出更自然的说法。反馈准、不漏，适合抠语法。
+ * - 畅聊模式（voice）：直接说话，AI 用语音回你，中间不打断。练的是把话说出口的流利度，
+ *   纠正在回合结束后异步补上。
+ *
+ * 不把两者揉在一个界面里 —— 「每句都被纠」和「不被打断地说完」本质冲突，混在一起会互相削弱。
+ */
+type Mode = 'text' | 'voice';
+
 export function ChatPage() {
+  const [mode, setMode] = useState<Mode>('text');
   const [config, setConfig] = useState<StartConfig | null>(null);
   const [openId, setOpenId] = useState<number | null>(null);
   const [history, setHistory] = useState<ConvSummary[] | null>(null);
@@ -107,11 +120,19 @@ export function ChatPage() {
         </div>
         {config?.scenarioZh && <p className="text-xs dim">{config.scenarioZh}</p>}
         {/* key 保证换场景时面板彻底重建 */}
-        <ChatPanel
-          key={openId ?? config?.title}
-          start={config ?? undefined}
-          conversationId={openId ?? undefined}
-        />
+        {mode === 'voice' && config ? (
+          <VoiceChatLauncher
+            key={`v-${config.title}`}
+            start={config}
+            onHangUp={() => setConfig(null)}
+          />
+        ) : (
+          <ChatPanel
+            key={openId ?? config?.title}
+            start={config ?? undefined}
+            conversationId={openId ?? undefined}
+          />
+        )}
       </div>
     );
   }
@@ -121,9 +142,35 @@ export function ChatPage() {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">AI 对话</h1>
         <p className="mt-1.5 text-sm dim">
-          说错也没关系，AI 每次回话都会顺手告诉你更自然的说法，错的会自动进错误本。
+          {mode === 'text'
+            ? '说错也没关系，AI 每次回话都会顺手告诉你更自然的说法，错的会自动进错误本。'
+            : '直接开口说，AI 用语音回你，中间不打断。纠正在你说完之后补上来。'}
         </p>
       </header>
+
+      <div className="flex gap-2 rounded-xl bg-[var(--surface-2)] p-1">
+        {(
+          [
+            { k: 'text' as const, zh: '打字练', hint: '每句都纠', Icon: Keyboard },
+            { k: 'voice' as const, zh: '开口聊', hint: '不打断', Icon: AudioLines },
+          ]
+        ).map(({ k, zh, hint, Icon }) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setMode(k)}
+            aria-pressed={mode === k}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-colors',
+              mode === k ? 'bg-[var(--surface)] shadow-sm' : 'text-[var(--text-dim)]',
+            )}
+          >
+            <Icon className="size-4" aria-hidden />
+            {zh}
+            <span className="text-[11px] font-normal dim">{hint}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="grid gap-2.5 sm:grid-cols-2">
         {SCENARIOS.map((s) => (
@@ -155,6 +202,7 @@ export function ChatPage() {
         type="button"
         onClick={() => setShowHistory((s) => !s)}
         className="flex w-full items-center justify-center gap-1.5 text-sm dim hover:underline"
+        hidden={mode === 'voice'}
       >
         <History className="size-4" aria-hidden />
         {showHistory ? '收起' : '看以前聊过的'}

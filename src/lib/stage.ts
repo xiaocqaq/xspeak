@@ -10,7 +10,7 @@ import {
   saveStageContent,
 } from '@/lib/repo/session';
 import { getWordsByIds } from '@/lib/repo/words';
-import { getDb, safeJson } from '@/lib/db';
+import { all } from '@/lib/db';
 import type { SessionRow, Stage, UserProfile, WordRow } from '@/lib/types';
 
 function learnerOf(u: UserProfile): P.Learner {
@@ -23,18 +23,23 @@ function learnerOf(u: UserProfile): P.Learner {
   };
 }
 
-function ctxOf(u: UserProfile, s: SessionRow): P.Ctx {
+async function ctxOf(u: UserProfile, s: SessionRow): Promise<P.Ctx> {
   return {
     themeZh: s.theme_zh,
     themeEn: s.theme_en,
     learner: learnerOf(u),
-    mistakes: recentMistakes(u.id, 8),
+    mistakes: await recentMistakes(u.id, 8),
   };
 }
 
 /** 目标词的展示信息（供前端渲染卡片）。 */
-export function targetWordsOf(s: SessionRow): WordRow[] {
+export function targetWordsOf(s: SessionRow): Promise<WordRow[]> {
   return getWordsByIds(s.target_word_ids);
+}
+
+async function termsOf(s: SessionRow): Promise<string[]> {
+  const words = await targetWordsOf(s);
+  return words.map((w) => w.term);
 }
 
 /**
@@ -49,33 +54,32 @@ export async function buildStage(
   regenerate = false,
 ): Promise<{ payload: unknown; meta: Record<string, unknown> }> {
   if (!regenerate) {
-    const cached = getStageContent<unknown>(session.id, stage);
-    if (cached) return { payload: cached, meta: metaFor(session, stage) };
+    const cached = await getStageContent<unknown>(session.id, stage);
+    if (cached) return { payload: cached, meta: await metaFor(session, stage) };
   }
 
-  const ctx = ctxOf(user, session);
+  const ctx = await ctxOf(user, session);
   const learner = learnerOf(user);
   let payload: unknown;
 
   switch (stage) {
     case 'warmup': {
-      const words = getWordsByIds(session.review_word_ids);
+      const words = await getWordsByIds(session.review_word_ids);
       if (!words.length) {
         // 第一天没有可复习的内容，给一个明确的空态而不是硬造题
         payload = { intro_zh: '今天还没有到期的复习内容，直接从新词开始吧。', items: [] };
         break;
       }
-      const db = getDb();
-      const withSeen = words.map((w) => {
-        const row = db
-          .prepare('SELECT seen_contexts FROM user_words WHERE user_id = ? AND word_id = ?')
-          .get(user.id, w.id) as { seen_contexts: string } | undefined;
-        return {
-          term: w.term,
-          meaning_zh: w.meaning_zh,
-          seen: safeJson<string[]>(row?.seen_contexts, []),
-        };
-      });
+      const seenRows = await all<{ word_id: number; seen_contexts: string[] | null }>(
+        'SELECT word_id, seen_contexts FROM user_words WHERE user_id = ? AND word_id = ANY(?::int[])',
+        [user.id, words.map((w) => w.id)],
+      );
+      const seenMap = new Map(seenRows.map((r) => [r.word_id, r.seen_contexts ?? []]));
+      const withSeen = words.map((w) => ({
+        term: w.term,
+        meaning_zh: w.meaning_zh,
+        seen: seenMap.get(w.id) ?? [],
+      }));
       payload = await generateJson(S.WarmupPayload, {
         system: P.systemPrompt(learner),
         prompt: P.warmupPrompt(ctx, withSeen),
@@ -86,30 +90,29 @@ export async function buildStage(
     }
 
     case 'newwords': {
-      const existing = targetWordsOf(session);
+      const existing = await targetWordsOf(session);
       const need = Math.max(0, user.new_words_per_day - existing.length);
       if (need > 0) {
         // 内置词表在这个主题下不够用，让 AI 按主题和水平补齐
-        const known = getDb()
-          .prepare(
-            `SELECT w.term FROM user_words uw JOIN words w ON w.id = uw.word_id
-             WHERE uw.user_id = ? ORDER BY uw.created_at DESC LIMIT 80`,
-          )
-          .all(user.id) as { term: string }[];
+        const known = await all<{ term: string }>(
+          `SELECT w.term FROM user_words uw JOIN words w ON w.id = uw.word_id
+           WHERE uw.user_id = ? ORDER BY uw.created_at DESC LIMIT 80`,
+          [user.id],
+        );
         const gen = await generateJson(S.NewWordsPayload, {
           system: P.systemPrompt(learner),
           prompt: P.newWordsPrompt(ctx, known.map((k) => k.term), need),
           maxTokens: 6000,
           toolName: 'emit_new_words',
         });
-        addAiWordsToSession(session.id, session.theme_slug, gen.words, user.level);
-        const refreshed = getSessionById(session.id)!;
-        const all = getWordsByIds(refreshed.target_word_ids);
+        await addAiWordsToSession(session.id, session.theme_slug, gen.words, user.level);
+        const refreshed = (await getSessionById(session.id))!;
+        const all_ = await getWordsByIds(refreshed.target_word_ids);
         // 把库里已有的词也补上记忆抓手，前端展示统一
         const hookMap = new Map(gen.words.map((w) => [w.term.toLowerCase(), w]));
         payload = {
           intro_zh: gen.intro_zh,
-          words: all.map((w) => {
+          words: all_.map((w) => {
             const ai = hookMap.get(w.term.toLowerCase());
             return {
               id: w.id,
@@ -162,7 +165,7 @@ export async function buildStage(
 
     case 'grammar': {
       const gid = session.grammar_ids[0];
-      const point = gid ? getGrammarById(gid) : null;
+      const point = gid ? await getGrammarById(gid) : null;
       if (!point) {
         payload = { focus_zh: '语法点已经全部学过一轮了，换个日子会重新考。', mini_lesson_zh: '', examples: [], exercises: [] };
         break;
@@ -177,7 +180,7 @@ export async function buildStage(
         },
         ...(await generateJson(S.GrammarPayload, {
           system: P.systemPrompt(learner),
-          prompt: P.grammarPrompt(ctx, point, targetWordsOf(session).map((w) => w.term)),
+          prompt: P.grammarPrompt(ctx, point, await termsOf(session)),
           maxTokens: 6000,
           toolName: 'emit_grammar',
         })),
@@ -188,7 +191,7 @@ export async function buildStage(
     case 'listening':
       payload = await generateJson(S.ListeningPayload, {
         system: P.systemPrompt(learner),
-        prompt: P.listeningPrompt(ctx, targetWordsOf(session).map((w) => w.term)),
+        prompt: P.listeningPrompt(ctx, await termsOf(session)),
         maxTokens: 6000,
         toolName: 'emit_listening',
       });
@@ -197,7 +200,7 @@ export async function buildStage(
     case 'reading':
       payload = await generateJson(S.ReadingPayload, {
         system: P.systemPrompt(learner),
-        prompt: P.readingPrompt(ctx, targetWordsOf(session).map((w) => w.term)),
+        prompt: P.readingPrompt(ctx, await termsOf(session)),
         maxTokens: 6000,
         toolName: 'emit_reading',
       });
@@ -206,7 +209,7 @@ export async function buildStage(
     case 'speaking':
       payload = await generateJson(S.SpeakingPayload, {
         system: P.systemPrompt(learner),
-        prompt: P.speakingPrompt(ctx, targetWordsOf(session).map((w) => w.term)),
+        prompt: P.speakingPrompt(ctx, await termsOf(session)),
         maxTokens: 4000,
         toolName: 'emit_speaking',
       });
@@ -215,25 +218,26 @@ export async function buildStage(
     case 'writing':
       payload = await generateJson(S.WritingPayload, {
         system: P.systemPrompt(learner),
-        prompt: P.writingPrompt(ctx, targetWordsOf(session).map((w) => w.term)),
+        prompt: P.writingPrompt(ctx, await termsOf(session)),
         maxTokens: 4000,
         toolName: 'emit_writing',
       });
       break;
   }
 
-  saveStageContent(session.id, stage, payload);
-  return { payload, meta: metaFor(getSessionById(session.id) ?? session, stage) };
+  await saveStageContent(session.id, stage, payload);
+  return { payload, meta: await metaFor((await getSessionById(session.id)) ?? session, stage) };
 }
 
-function metaFor(session: SessionRow, stage: Stage): Record<string, unknown> {
+async function metaFor(session: SessionRow, stage: Stage): Promise<Record<string, unknown>> {
+  const words = await targetWordsOf(session);
   return {
     stage,
     sessionId: session.id,
     themeZh: session.theme_zh,
     themeEn: session.theme_en,
     stagesDone: session.stages_done,
-    targetWords: targetWordsOf(session).map((w) => ({
+    targetWords: words.map((w) => ({
       id: w.id,
       term: w.term,
       meaning_zh: w.meaning_zh,

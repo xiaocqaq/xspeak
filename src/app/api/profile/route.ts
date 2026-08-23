@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { body, currentUser, handle } from '@/lib/api';
-import { getDb } from '@/lib/db';
+import { json, run } from '@/lib/db';
 import { listMistakes, resolveMistake } from '@/lib/repo/mistakes';
 
 export const runtime = 'nodejs';
@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   return handle(async () => {
-    const user = currentUser();
-    return { user, mistakes: listMistakes(user.id) };
+    const user = await currentUser();
+    return { user, mistakes: await listMistakes(user.id) };
   });
 }
 
@@ -26,12 +26,11 @@ const PatchBody = z.object({
 
 export async function PATCH(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, PatchBody);
-    const db = getDb();
 
     if (input.resolveMistakeId) {
-      resolveMistake(user.id, input.resolveMistakeId);
+      await resolveMistake(user.id, input.resolveMistakeId);
     }
 
     const sets: string[] = [];
@@ -52,11 +51,11 @@ export async function PATCH(req: Request) {
     }
     if (input.interests) {
       sets.push('interests = @interests');
-      args.interests = JSON.stringify(input.interests);
+      args.interests = json(input.interests);
     }
     if (sets.length) {
-      db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`).run(args);
+      await run(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`, args);
     }
-    return { user: currentUser() };
+    return { user: await currentUser() };
   });
 }

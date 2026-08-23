@@ -3,7 +3,7 @@ import { body, currentUser, handle } from '@/lib/api';
 import { generateJson } from '@/lib/ai/client';
 import { CorrectionPayload } from '@/lib/ai/schemas';
 import { correctionPrompt, systemPrompt, type Learner } from '@/lib/ai/prompts';
-import { getDb } from '@/lib/db';
+import { all, json, run } from '@/lib/db';
 import { getWordsByIds, markProduced } from '@/lib/repo/words';
 import { recordMistakes } from '@/lib/repo/mistakes';
 import { bumpDaily } from '@/lib/repo/stats';
@@ -23,7 +23,7 @@ const Body = z.object({
 /** 写作批改：出分、给改后版本、逐条问题，并把错误归档。 */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, Body);
     const learner: Learner = {
       name: user.name,
@@ -41,12 +41,10 @@ export async function POST(req: Request) {
       toolName: 'emit_correction',
     });
 
-    getDb()
-      .prepare(
-        `INSERT INTO writings (user_id, session_id, prompt_en, prompt_zh, text, corrected, score, feedback)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+    await run(
+      `INSERT INTO writings (user_id, session_id, prompt_en, prompt_zh, text, corrected, score, feedback)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
         user.id,
         input.sessionId ?? null,
         input.promptEn,
@@ -54,11 +52,12 @@ export async function POST(req: Request) {
         input.text,
         result.corrected_en,
         result.score,
-        JSON.stringify({ summary_zh: result.summary_zh, issues: result.issues }),
-      );
+        json({ summary_zh: result.summary_zh, issues: result.issues }),
+      ],
+    );
 
     if (result.issues.length) {
-      recordMistakes(
+      await recordMistakes(
         user.id,
         result.issues.map((i) => ({
           kind: i.kind,
@@ -71,9 +70,9 @@ export async function POST(req: Request) {
     }
 
     // 真的用上了目标词才算产出
-    const used = matchIds(result.used_target_words, input.targetWordIds);
-    if (used.length) markProduced(user.id, used);
-    bumpDaily(user.id, { produced: used.length });
+    const used = await matchIds(result.used_target_words, input.targetWordIds);
+    if (used.length) await markProduced(user.id, used);
+    await bumpDaily(user.id, { produced: used.length });
 
     return { ...result, usedWordIds: used };
   });
@@ -82,20 +81,19 @@ export async function POST(req: Request) {
 /** 历史写作记录 */
 export async function GET() {
   return handle(async () => {
-    const user = currentUser();
-    const rows = getDb()
-      .prepare(
-        `SELECT id, prompt_en, prompt_zh, text, corrected, score, feedback, created_at
-         FROM writings WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
-      )
-      .all(user.id);
-    return { writings: rows };
+    const user = await currentUser();
+    const writings = await all(
+      `SELECT id, prompt_en, prompt_zh, text, corrected, score, feedback, created_at
+       FROM writings WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
+      [user.id],
+    );
+    return { writings };
   });
 }
 
-function matchIds(terms: string[], candidateIds: number[]): number[] {
+async function matchIds(terms: string[], candidateIds: number[]): Promise<number[]> {
   if (!terms.length || !candidateIds.length) return [];
-  const words = getWordsByIds(candidateIds);
+  const words = await getWordsByIds(candidateIds);
   const set = new Set(terms.map((t) => t.toLowerCase().trim()));
   return words.filter((w) => set.has(w.term.toLowerCase())).map((w) => w.id);
 }

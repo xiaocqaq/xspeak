@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { body, currentUser, handle } from '@/lib/api';
-import { getDb } from '@/lib/db';
+import { json, run } from '@/lib/db';
 import { scorePronunciation } from '@/lib/pronounce';
 import { bumpDaily } from '@/lib/repo/stats';
 import { recordMistake } from '@/lib/repo/mistakes';
@@ -21,27 +21,26 @@ const Body = z.object({
  */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, Body);
     const scored = scorePronunciation(input.target, input.transcript);
 
-    getDb()
-      .prepare(
-        `INSERT INTO speech_attempts (user_id, session_id, target, transcript, score, detail)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+    await run(
+      `INSERT INTO speech_attempts (user_id, session_id, target, transcript, score, detail)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
         user.id,
         input.sessionId ?? null,
         input.target,
         input.transcript,
         scored.score,
-        JSON.stringify(scored.words),
-      );
+        json(scored.words),
+      ],
+    );
 
     // 念得明显不准才记进错误本，免得错误本被日常波动灌满
     if (scored.score < 60) {
-      recordMistake(user.id, {
+      await recordMistake(user.id, {
         kind: 'pronunciation',
         stage: 'speaking',
         wrong: input.transcript || '(没识别到)',
@@ -50,7 +49,7 @@ export async function POST(req: Request) {
       });
     }
 
-    bumpDaily(user.id, { spoken_seconds: Math.round(input.spokenSeconds) });
+    await bumpDaily(user.id, { spoken_seconds: Math.round(input.spokenSeconds) });
     return { scored };
   });
 }

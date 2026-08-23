@@ -12,7 +12,7 @@ export function fail(message: string, status = 400, extra?: Record<string, unkno
   return NextResponse.json({ ok: false, error: message, ...extra }, { status });
 }
 
-export function currentUser(): UserProfile {
+export function currentUser(): Promise<UserProfile> {
   return getOrCreateUser();
 }
 

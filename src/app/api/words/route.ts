@@ -16,11 +16,11 @@ export const dynamic = 'force-dynamic';
 /** 生词本列表 */
 export async function GET(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const url = new URL(req.url);
     const filter = (url.searchParams.get('filter') ?? 'all') as VocabFilter;
     const q = url.searchParams.get('q') ?? '';
-    const items = listVocab(user.id, filter, q);
+    const items = await listVocab(user.id, filter, q);
     return {
       items: items.map((it) => ({
         ...it,
@@ -38,21 +38,24 @@ const ActionBody = z.object({
 
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, ActionBody);
     switch (input.action) {
       case 'enroll':
-        enrollWords(user.id, input.wordIds);
+        await enrollWords(user.id, input.wordIds);
         return { enrolled: input.wordIds.length };
       case 'star': {
-        const states = input.wordIds.map((id) => ({ wordId: id, starred: toggleStar(user.id, id) }));
+        const states: { wordId: number; starred: number }[] = [];
+        for (const id of input.wordIds) {
+          states.push({ wordId: id, starred: await toggleStar(user.id, id) });
+        }
         return { states };
       }
       case 'reset':
-        for (const id of input.wordIds) resetWordProgress(user.id, id);
+        for (const id of input.wordIds) await resetWordProgress(user.id, id);
         return { reset: input.wordIds.length };
       case 'remove':
-        for (const id of input.wordIds) removeWord(user.id, id);
+        for (const id of input.wordIds) await removeWord(user.id, id);
         return { removed: input.wordIds.length };
     }
   });

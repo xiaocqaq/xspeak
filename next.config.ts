@@ -1,8 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // better-sqlite3 是原生模块，不能被打包，必须留给 Node 运行时 require
-  serverExternalPackages: ['better-sqlite3'],
+  // pg 会按运行环境动态 require（原生 pg-native / 纯 JS 实现），交给 Node 运行时解析
+  serverExternalPackages: ['pg'],
   typedRoutes: false,
   async headers() {
     return [
