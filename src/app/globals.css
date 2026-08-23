@@ -1,0 +1,167 @@
+@import 'tailwindcss';
+
+/* Tailwind 4 用 @theme 定义设计变量，不再需要 tailwind.config.js */
+@theme {
+  --color-ink-50: #f6f7f9;
+  --color-ink-100: #eceef2;
+  --color-ink-200: #d5d9e2;
+  --color-ink-300: #b0b8c7;
+  --color-ink-400: #7d879b;
+  --color-ink-500: #5a6478;
+  --color-ink-600: #414a5c;
+  --color-ink-700: #2f3644;
+  --color-ink-800: #1f2430;
+  --color-ink-900: #14171f;
+  --color-ink-950: #0c0e14;
+
+  --color-brand-50: #eef7f4;
+  --color-brand-100: #d5ece5;
+  --color-brand-200: #a9d9cc;
+  --color-brand-300: #74c0ac;
+  --color-brand-400: #46a48c;
+  --color-brand-500: #2c8871;
+  --color-brand-600: #1f6d5b;
+  --color-brand-700: #1b574a;
+  --color-brand-800: #17453c;
+  --color-brand-900: #133932;
+
+  --color-warm-400: #e0a458;
+  --color-warm-500: #cf8b39;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-serif-en: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+}
+
+:root {
+  color-scheme: light dark;
+  --bg: var(--color-ink-50);
+  --surface: #ffffff;
+  --surface-2: var(--color-ink-100);
+  --text: var(--color-ink-800);
+  --text-dim: var(--color-ink-500);
+  --border: var(--color-ink-200);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--color-ink-950);
+    --surface: var(--color-ink-900);
+    --surface-2: var(--color-ink-800);
+    --text: var(--color-ink-100);
+    --text-dim: var(--color-ink-400);
+    --border: var(--color-ink-700);
+  }
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* PWA 里避免整页橡皮筋滚动 */
+  overscroll-behavior-y: none;
+}
+
+/* 英文内容用衬线体，和中文说明形成视觉区分，读起来更像"英文材料" */
+.en {
+  font-family: var(--font-serif-en);
+  font-feature-settings: 'liga' 1;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+
+.dim {
+  color: var(--text-dim);
+}
+
+/* 可点击的单词：阅读/听力里点一下即查词 */
+.tappable-word {
+  cursor: pointer;
+  border-radius: 0.25rem;
+  padding: 0 1px;
+  transition: background-color 0.12s;
+}
+.tappable-word:hover {
+  background: var(--color-brand-100);
+}
+@media (prefers-color-scheme: dark) {
+  .tappable-word:hover {
+    background: var(--color-brand-800);
+  }
+}
+
+/* 目标词在文中高亮 */
+.target-word {
+  background: color-mix(in srgb, var(--color-warm-400) 28%, transparent);
+  border-bottom: 1.5px solid var(--color-warm-500);
+  border-radius: 0.2rem;
+  padding: 0 2px;
+  font-weight: 500;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-up {
+  animation: fade-up 0.24s ease-out;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-400) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.recording {
+  animation: pulse-ring 1.4s infinite;
+}
+
+/* 尊重系统的"减少动效"设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 滚动条低调一点 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-300);
+  border-radius: 999px;
+}
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-700);
+  }
+}
+
+/* 键盘可达性：统一焦点环 */
+:focus-visible {
+  outline: 2px solid var(--color-brand-400);
+  outline-offset: 2px;
+}
