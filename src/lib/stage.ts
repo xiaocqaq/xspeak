@@ -51,7 +51,28 @@ export async function buildStage(
   if (!regenerate) {
     const cached = getStageContent<unknown>(session.id, stage);
     if (cached) return { payload: cached, meta: metaFor(session, stage) };
+
+    // 前端会预取下一个环节，用户手快时可能同时来两个请求。
+    // 没有这层去重就会重复调一次 AI（白花钱，还可能重复写库）。
+    const key = `${session.id}:${stage}`;
+    const running = inFlight.get(key);
+    if (running) return running;
+    const p = generateStage(user, session, stage).finally(() => inFlight.delete(key));
+    inFlight.set(key, p);
+    return p;
   }
+  // "换一批"总是重新生成，不参与去重
+  return generateStage(user, session, stage);
+}
+
+/** 同一个 session+stage 正在生成中的请求，用于合并并发请求 */
+const inFlight = new Map<string, Promise<{ payload: unknown; meta: Record<string, unknown> }>>();
+
+async function generateStage(
+  user: UserProfile,
+  session: SessionRow,
+  stage: Stage,
+): Promise<{ payload: unknown; meta: Record<string, unknown> }> {
 
   const ctx = ctxOf(user, session);
   const learner = learnerOf(user);

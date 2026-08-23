@@ -18,6 +18,19 @@ export function seedIfEmpty(db: Database.Database): void {
          (term, phonetic, pos, meaning_zh, meaning_en, cefr, theme, example_en, example_zh, source)
          VALUES (@term, @phonetic, @pos, @meaning_zh, @meaning_en, @cefr, @theme, @example_en, @example_zh, 'seed')`,
       );
+      // words.term 上有 UNIQUE，词表里写重了的话 OR IGNORE 会静默丢掉一条，
+      // 结果就是某个主题少一个词而没人发现。开发时直接喊出来。
+      if (process.env.NODE_ENV !== 'production') {
+        const seen = new Set<string>();
+        const dupes: string[] = [];
+        for (const w of SEED_WORDS) {
+          if (seen.has(w.term)) dupes.push(w.term);
+          else seen.add(w.term);
+        }
+        if (dupes.length) {
+          console.warn(`[seed] 词表里有重复的词，会被丢掉：${dupes.join(', ')}`);
+        }
+      }
       for (const w of SEED_WORDS) ins.run(w);
     }
 

@@ -25,8 +25,16 @@
   --color-brand-800: #17453c;
   --color-brand-900: #133932;
 
+  --color-warm-50: #fdf6ec;
+  --color-warm-100: #faead1;
+  --color-warm-200: #f4d5a5;
+  --color-warm-300: #eabd78;
   --color-warm-400: #e0a458;
   --color-warm-500: #cf8b39;
+  --color-warm-600: #ad6e2b;
+  --color-warm-700: #8a5624;
+  --color-warm-800: #6d4520;
+  --color-warm-900: #58381c;
 
   --font-sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
     'Microsoft YaHei', 'Noto Sans SC', sans-serif;

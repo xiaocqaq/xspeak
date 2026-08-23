@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   // better-sqlite3 是原生模块，不能被打包，必须留给 Node 运行时 require
   serverExternalPackages: ['better-sqlite3'],
   typedRoutes: false,
+  // 不让 Next 自动往仓库里塞 AGENTS.md / CLAUDE.md
+  agentRules: false,
   async headers() {
     return [
       {

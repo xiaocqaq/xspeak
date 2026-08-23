@@ -83,10 +83,27 @@ await step('PATCH /api/profile（改档案）', async () => {
   await call('PATCH', '/api/profile', { newWordsPerDay: before }); // 还原
 });
 
-await step('GET /api/words（词库）', async () => {
-  const d = await call('GET', '/api/words?filter=all');
-  assert(Array.isArray(d.items), 'items 不是数组');
-  assert(d.items.length > 0, '内置词表是空的，播种可能没跑');
+// 注意：/api/words 返回的是"我的生词本"（已加入学习的词），
+// 新库天然是空的。所以这里走一遍 加入 → 列表 → 收藏 的往返，
+// 而不是断言它一开始就有内容。
+await step('POST/GET /api/words（生词本往返）', async () => {
+  const ids = (today?.targetWords ?? []).map((w) => w.id).slice(0, 3);
+  assert(ids.length > 0, '今天没有新词，拿不到 wordId');
+
+  const en = await call('POST', '/api/words', { action: 'enroll', wordIds: ids });
+  assert(en.enrolled === ids.length, `enroll 数量不对：${en.enrolled}`);
+
+  const list = await call('GET', '/api/words?filter=all');
+  assert(Array.isArray(list.items), 'items 不是数组');
+  assert(list.items.length >= ids.length, `生词本里只有 ${list.items.length} 个，应该 ≥ ${ids.length}`);
+
+  const first = list.items.find((it) => ids.includes(it.id));
+  assert(first, '刚加入的词没出现在生词本里');
+  assert('nextIntervals' in first, '缺 nextIntervals 字段（前端要显示下次复习间隔）');
+
+  const st = await call('POST', '/api/words', { action: 'star', wordIds: [ids[0]] });
+  assert(st.states?.[0]?.wordId === ids[0], 'star 返回结构不对');
+  await call('POST', '/api/words', { action: 'star', wordIds: [ids[0]] }); // 取消收藏，还原
 });
 
 await step('GET /api/grammar（语法库）', async () => {
@@ -155,6 +172,18 @@ if (!FAST) {
     const cost = Date.now() - a;
     assert(d.payload.passage_en === payloads.reading?.payload?.passage_en, '两次内容不一样，缓存没生效');
     assert(cost < 3000, `第二次花了 ${cost}ms，太慢了，可能没走缓存`);
+  });
+
+  // 前端会预取下一环节，用户手快时同一个 stage 会并发进来两次。
+  // 必须合并成一次 AI 调用，否则白花钱还可能重复写库。
+  await step('并发请求同一环节只生成一次', async () => {
+    const [a, b, c] = await Promise.all([
+      call('GET', '/api/session/stage?stage=speaking'),
+      call('GET', '/api/session/stage?stage=speaking'),
+      call('GET', '/api/session/stage?stage=speaking'),
+    ]);
+    const j = (x) => JSON.stringify(x.payload);
+    assert(j(a) === j(b) && j(b) === j(c), '三次并发拿到了不同内容，说明重复生成了');
   });
 
   await step('POST /api/review（提交复习）', async () => {
