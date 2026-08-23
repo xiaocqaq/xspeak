@@ -2,13 +2,16 @@ node_modules/
 /.next/
 /out/
 /build/
-# 只忽略仓库根目录的 data/（SQLite 存这里）。
+# 只忽略仓库根目录的 data/（SQLite 遗留产物存这里）。
 # 不能写成 data/，那样会连 src/data/ 里的词表一起忽略掉。
 /data/
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+# 本地导出/备份产物（db:reset --dump 之类）
+/dumps/
+*.sql.bak
 .env
 .env.local
 .env*.local
@@ -20,3 +23,5 @@ npm-debug.log*
 .vercel
 .turbo
 coverage/
+.idea/
+.vscode/

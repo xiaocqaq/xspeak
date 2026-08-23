@@ -21,7 +21,7 @@ const Body = z.object({
  */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, Body);
     const learner: Learner = {
       name: user.name,
@@ -30,6 +30,9 @@ export async function POST(req: Request) {
       interests: user.interests,
       newWordsPerDay: user.new_words_per_day,
     };
+
+    // 入库前先看一眼，用来告诉前端这个词是不是早就见过
+    const before = await findWordByTerm(input.term);
 
     const result = await generateJson(LookupPayload, {
       system: systemPrompt(learner),
@@ -40,7 +43,7 @@ export async function POST(req: Request) {
     });
 
     // 入库，这样它能进生词本和后续复习
-    const wordId = upsertWordFromAi(
+    const wordId = await upsertWordFromAi(
       {
         term: result.term,
         phonetic: result.phonetic,
@@ -55,9 +58,8 @@ export async function POST(req: Request) {
       'lookup',
       result.cefr,
     );
-    if (input.enroll) enrollWords(user.id, [wordId]);
+    if (input.enroll) await enrollWords(user.id, [wordId]);
 
-    const existing = findWordByTerm(result.term);
-    return { ...result, wordId, enrolled: input.enroll, known: Boolean(existing) };
+    return { ...result, wordId, enrolled: input.enroll, known: Boolean(before) };
   });
 }

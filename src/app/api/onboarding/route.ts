@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { body, currentUser, handle } from '@/lib/api';
-import { getDb } from '@/lib/db';
+import { json, run } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,23 +17,22 @@ const Body = z.object({
 /** 首次进入时保存画像，之后每天的内容都按它生成。 */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, Body);
-    getDb()
-      .prepare(
-        `UPDATE users SET name=@name, level=@level, goal=@goal, interests=@interests,
-           daily_minutes=@dailyMinutes, new_words_per_day=@newWordsPerDay, onboarded=1
-         WHERE id=@id`,
-      )
-      .run({
+    await run(
+      `UPDATE users SET name=@name, level=@level, goal=@goal, interests=@interests,
+         daily_minutes=@dailyMinutes, new_words_per_day=@newWordsPerDay, onboarded=1
+       WHERE id=@id`,
+      {
         id: user.id,
         name: input.name,
         level: input.level,
         goal: input.goal,
-        interests: JSON.stringify(input.interests),
+        interests: json(input.interests),
         dailyMinutes: input.dailyMinutes,
         newWordsPerDay: input.newWordsPerDay,
-      });
-    return { user: currentUser() };
+      },
+    );
+    return { user: await currentUser() };
   });
 }

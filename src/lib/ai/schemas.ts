@@ -37,7 +37,12 @@ export const NewWordsPayload = z.object({
 export const GrammarExercise = z.object({
   kind: z.enum(['choice', 'fix', 'translate']).describe('choice=选择 fix=改错 translate=中译英'),
   question: z.string().describe('题干；fix 类型给出含错误的英文句子；translate 给中文'),
-  options: z.array(z.string()).describe('仅 choice 需要四个选项，其他类型给空数组'),
+  // fix / translate 题没有选项。要求模型显式给空数组它经常直接省略字段，
+  // 所以这里给个默认值：缺字段就当空数组，前端按 options.length 判断是否渲染选择题。
+  options: z
+    .array(z.string())
+    .default([])
+    .describe('仅 kind=choice 时给四个选项；fix / translate 不要给这个字段'),
   answer: z.string().describe('参考答案'),
   explain_zh: z.string().describe('讲清为什么，并指出中文母语者容易踩的点'),
 });
@@ -144,6 +149,23 @@ export const ChatReplyPayload = z.object({
   suggestion_en: z.string().describe('给用户下一句可以怎么接的提示，一句英文'),
 });
 
+/**
+ * 畅聊模式的旁路分析。
+ *
+ * 端到端语音模型只负责把对话撑住，不返回纠正。这个 schema 给的是
+ * 「学生刚说的那句话」的教学侧结果：没有 reply_en，因为回复已经由语音给出了。
+ */
+export const CoachingPayload = z.object({
+  correction: z
+    .object({
+      has_issue: z.boolean().describe('这句话是否有需要纠正的问题'),
+      corrected_en: z.string().describe('没问题就原样返回学生的话'),
+      note_zh: z.string().describe('一句中文说明；没问题就给一句简短鼓励'),
+    })
+    .describe('对学生这句话的纠正，语气温和'),
+  used_target_words: z.array(z.string()).describe('学生这句话里真正用上的目标词，没有就空数组'),
+});
+
 /** 查词 */
 export const LookupPayload = z.object({
   term: z.string(),
@@ -177,6 +199,7 @@ export type SpeakingData = z.infer<typeof SpeakingPayload>;
 export type WritingData = z.infer<typeof WritingPayload>;
 export type CorrectionData = z.infer<typeof CorrectionPayload>;
 export type ChatReplyData = z.infer<typeof ChatReplyPayload>;
+export type CoachingData = z.infer<typeof CoachingPayload>;
 export type LookupData = z.infer<typeof LookupPayload>;
 export type ExtractData = z.infer<typeof ExtractPayload>;
 export type NewWordData = z.infer<typeof NewWord>;

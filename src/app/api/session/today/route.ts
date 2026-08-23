@@ -11,9 +11,14 @@ export const dynamic = 'force-dynamic';
 /** 今天的学习计划总览。首页和学习页都用它开局。 */
 export async function GET() {
   return handle(async () => {
-    const user = currentUser();
-    const s = getOrCreateToday(user);
-    const grammar = s.grammar_ids[0] ? getGrammarById(s.grammar_ids[0]) : null;
+    const user = await currentUser();
+    const s = await getOrCreateToday(user);
+    const [grammar, reviewWords, targetWords, stats] = await Promise.all([
+      s.grammar_ids[0] ? getGrammarById(s.grammar_ids[0]) : null,
+      getWordsByIds(s.review_word_ids),
+      getWordsByIds(s.target_word_ids),
+      getSummary(user.id),
+    ]);
     return {
       session: {
         id: s.id,
@@ -27,12 +32,12 @@ export async function GET() {
         completedAt: s.completed_at,
         stages: STAGES,
       },
-      reviewWords: getWordsByIds(s.review_word_ids).map((w) => ({
+      reviewWords: reviewWords.map((w) => ({
         id: w.id,
         term: w.term,
         meaning_zh: w.meaning_zh,
       })),
-      targetWords: getWordsByIds(s.target_word_ids).map((w) => ({
+      targetWords: targetWords.map((w) => ({
         id: w.id,
         term: w.term,
         meaning_zh: w.meaning_zh,
@@ -41,7 +46,7 @@ export async function GET() {
       grammar: grammar
         ? { id: grammar.id, title_zh: grammar.title_zh, title_en: grammar.title_en, cefr: grammar.cefr }
         : null,
-      stats: getSummary(user.id),
+      stats,
       user: {
         name: user.name,
         level: user.level,

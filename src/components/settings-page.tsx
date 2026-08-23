@@ -194,8 +194,8 @@ export function SettingsPage() {
       <Card>
         <h2 className="text-sm font-semibold">关于数据</h2>
         <p className="mt-2 text-sm leading-relaxed dim">
-          所有学习记录都在本机的 SQLite 文件里（<code className="en">data/linxi.db</code>），没有账号系统，也不上云。
-          换电脑的话把这个文件拷过去就行。
+          所有学习记录都存在你自己配置的 PostgreSQL 库里（连接信息在 <code className="en">.env.local</code>），
+          没有账号系统。换电脑只要连同一个库就能接着学。
         </p>
         <p className="mt-2 text-sm leading-relaxed dim">
           也就是说：这个站默认只监听本机、不带登录。要放到公网必须先加一层认证。

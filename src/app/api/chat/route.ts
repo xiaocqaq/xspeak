@@ -3,7 +3,7 @@ import { body, currentUser, handle } from '@/lib/api';
 import { generateJson } from '@/lib/ai/client';
 import { ChatReplyPayload } from '@/lib/ai/schemas';
 import { chatSystemPrompt, type Learner } from '@/lib/ai/prompts';
-import { getDb, safeJson } from '@/lib/db';
+import { all, json, one, run, safeJson } from '@/lib/db';
 import { getWordsByIds, markProduced } from '@/lib/repo/words';
 import { recordMistake } from '@/lib/repo/mistakes';
 import { bumpDaily } from '@/lib/repo/stats';
@@ -32,50 +32,47 @@ const SendBody = z.object({
 /** 开一段对话，或在已有对话里发一句。 */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const raw = await body(req, z.union([StartBody, SendBody]));
-    const db = getDb();
 
     if (raw.action === 'start') {
-      const info = db
-        .prepare(
-          `INSERT INTO conversations (user_id, session_id, title, theme_slug, target_word_ids)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(
-          user.id,
-          raw.sessionId ?? null,
-          raw.title,
-          raw.themeSlug ?? null,
-          JSON.stringify(raw.targetWordIds),
-        );
-      const conversationId = Number(info.lastInsertRowid);
+      const created = await one<{ id: number }>(
+        `INSERT INTO conversations (user_id, session_id, title, theme_slug, target_word_ids)
+         VALUES (?, ?, ?, ?, ?) RETURNING id`,
+        [user.id, raw.sessionId ?? null, raw.title, raw.themeSlug ?? null, json(raw.targetWordIds)],
+      );
+      const conversationId = created!.id;
       // 场景设定存进第一条 system 消息，后续发言时读回来拼 prompt
-      db.prepare(
+      await run(
         `INSERT INTO chat_messages (conversation_id, role, content, translation_zh)
          VALUES (?, 'system', ?, ?)`,
-      ).run(conversationId, JSON.stringify({ scenarioZh: raw.scenarioZh, aiRole: raw.aiRole }), null);
+        [conversationId, JSON.stringify({ scenarioZh: raw.scenarioZh, aiRole: raw.aiRole }), null],
+      );
       if (raw.openingEn) {
-        db.prepare(
+        await run(
           `INSERT INTO chat_messages (conversation_id, role, content, translation_zh)
            VALUES (?, 'assistant', ?, ?)`,
-        ).run(conversationId, raw.openingEn, raw.openingZh ?? null);
+          [conversationId, raw.openingEn, raw.openingZh ?? null],
+        );
       }
-      return { conversationId, messages: loadMessages(conversationId) };
+      return { conversationId, messages: await loadMessages(conversationId) };
     }
 
     // action === 'send'
-    const conv = db
-      .prepare('SELECT * FROM conversations WHERE id = ? AND user_id = ?')
-      .get(raw.conversationId, user.id) as Record<string, unknown> | undefined;
+    const conv = await one<Record<string, unknown>>(
+      'SELECT * FROM conversations WHERE id = ? AND user_id = ?',
+      [raw.conversationId, user.id],
+    );
     if (!conv) throw new Error('对话不存在');
 
-    const targetIds = safeJson<number[]>(conv.target_word_ids, []);
-    const targetWords = getWordsByIds(targetIds).map((w) => w.term);
+    // target_word_ids 是 jsonb，读出来已经是数组
+    const targetIds = (conv.target_word_ids as number[] | null) ?? [];
+    const targetWords = (await getWordsByIds(targetIds)).map((w) => w.term);
 
-    const rows = db
-      .prepare('SELECT role, content, translation_zh FROM chat_messages WHERE conversation_id = ? ORDER BY id ASC')
-      .all(raw.conversationId) as { role: string; content: string }[];
+    const rows = await all<{ role: string; content: string }>(
+      'SELECT role, content, translation_zh FROM chat_messages WHERE conversation_id = ? ORDER BY id ASC',
+      [raw.conversationId],
+    );
     const setup = rows.find((r) => r.role === 'system');
     const meta = setup
       ? safeJson<{ scenarioZh: string; aiRole: string }>(setup.content, {
@@ -84,10 +81,10 @@ export async function POST(req: Request) {
         })
       : { scenarioZh: '自由聊天', aiRole: 'a friendly English tutor' };
 
-    db.prepare(`INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, 'user', ?)`).run(
+    await run(`INSERT INTO chat_messages (conversation_id, role, content) VALUES (?, 'user', ?)`, [
       raw.conversationId,
       raw.text,
-    );
+    ]);
 
     const learner: Learner = {
       name: user.name,
@@ -117,25 +114,26 @@ export async function POST(req: Request) {
       toolName: 'emit_chat_reply',
     });
 
-    db.prepare(
+    await run(
       `INSERT INTO chat_messages (conversation_id, role, content, translation_zh, feedback, used_words)
        VALUES (?, 'assistant', ?, ?, ?, ?)`,
-    ).run(
-      raw.conversationId,
-      reply.reply_en,
-      reply.reply_zh,
-      JSON.stringify({ correction: reply.correction, suggestion_en: reply.suggestion_en }),
-      JSON.stringify(reply.used_target_words),
+      [
+        raw.conversationId,
+        reply.reply_en,
+        reply.reply_zh,
+        json({ correction: reply.correction, suggestion_en: reply.suggestion_en }),
+        json(reply.used_target_words),
+      ],
     );
 
     // 用上了目标词就算一次产出
-    const usedIds = matchWordIds(reply.used_target_words, targetIds);
+    const usedIds = await matchWordIds(reply.used_target_words, targetIds);
     if (usedIds.length) {
-      markProduced(user.id, usedIds);
-      bumpDaily(user.id, { produced: usedIds.length });
+      await markProduced(user.id, usedIds);
+      await bumpDaily(user.id, { produced: usedIds.length });
     }
     if (reply.correction.has_issue) {
-      recordMistake(user.id, {
+      await recordMistake(user.id, {
         kind: 'grammar',
         stage: 'speaking',
         wrong: raw.text,
@@ -144,52 +142,50 @@ export async function POST(req: Request) {
       });
     }
 
-    return { reply, messages: loadMessages(raw.conversationId) };
+    return { reply, messages: await loadMessages(raw.conversationId) };
   });
 }
 
 /** 读一段对话的完整消息（GET ?id=）。 */
 export async function GET(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const url = new URL(req.url);
     const id = Number(url.searchParams.get('id'));
-    const db = getDb();
     if (!id) {
-      const rows = db
-        .prepare(
-          `SELECT c.id, c.title, c.created_at, COUNT(m.id) AS msgs
-           FROM conversations c LEFT JOIN chat_messages m
-             ON m.conversation_id = c.id AND m.role != 'system'
-           WHERE c.user_id = ? GROUP BY c.id ORDER BY c.id DESC LIMIT 30`,
-        )
-        .all(user.id);
+      const rows = await all(
+        `SELECT c.id, c.title, c.created_at, COUNT(m.id) AS msgs
+         FROM conversations c LEFT JOIN chat_messages m
+           ON m.conversation_id = c.id AND m.role != 'system'
+         WHERE c.user_id = ? GROUP BY c.id ORDER BY c.id DESC LIMIT 30`,
+        [user.id],
+      );
       return { conversations: rows };
     }
-    return { conversationId: id, messages: loadMessages(id) };
+    return { conversationId: id, messages: await loadMessages(id) };
   });
 }
 
-function loadMessages(conversationId: number) {
-  const rows = getDb()
-    .prepare(
-      `SELECT id, role, content, translation_zh, feedback, used_words, created_at
-       FROM chat_messages WHERE conversation_id = ? AND role != 'system' ORDER BY id ASC`,
-    )
-    .all(conversationId) as Record<string, unknown>[];
+async function loadMessages(conversationId: number) {
+  const rows = await all<Record<string, unknown>>(
+    `SELECT id, role, content, translation_zh, feedback, used_words, created_at
+     FROM chat_messages WHERE conversation_id = ? AND role != 'system' ORDER BY id ASC`,
+    [conversationId],
+  );
+  // feedback / used_words 都是 jsonb，驱动已经解析好了
   return rows.map((r) => ({
     id: Number(r.id),
     role: String(r.role) as 'user' | 'assistant',
     content: String(r.content),
     translationZh: (r.translation_zh as string | null) ?? null,
-    feedback: safeJson<{ correction?: unknown; suggestion_en?: string } | null>(r.feedback, null),
-    usedWords: safeJson<string[]>(r.used_words, []),
+    feedback: (r.feedback as { correction?: unknown; suggestion_en?: string } | null) ?? null,
+    usedWords: (r.used_words as string[] | null) ?? [],
   }));
 }
 
-function matchWordIds(terms: string[], candidateIds: number[]): number[] {
+async function matchWordIds(terms: string[], candidateIds: number[]): Promise<number[]> {
   if (!terms.length || !candidateIds.length) return [];
-  const words = getWordsByIds(candidateIds);
+  const words = await getWordsByIds(candidateIds);
   const lower = new Set(terms.map((t) => t.toLowerCase().trim()));
   return words.filter((w) => lower.has(w.term.toLowerCase())).map((w) => w.id);
 }

@@ -73,8 +73,8 @@ export function applyRating(row: CardRow, rating: 1 | 2 | 3 | 4, now = new Date(
 }
 
 /**
- * SQLite 里统一存 'YYYY-MM-DD HH:MM:SS' 的 UTC 字符串，
- * 这样能直接和 datetime('now') 比较大小。
+ * 时间列统一存 'YYYY-MM-DD HH:MM:SS' 的 UTC 字符串。
+ * 连接的会话时区钉死成 UTC，所以能直接和 SQL 里的 now() 比较大小。
  */
 export function toSql(d: Date): string {
   return d.toISOString().slice(0, 19).replace('T', ' ');

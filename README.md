@@ -1,7 +1,7 @@
 # 林习英语
 
 每天 30 分钟，一个主题串起七个环节：热身复习 → 新词 → 语法 → 听力 → 阅读 → 口语 → 写作批改。
-内容全部由 AI 按你的水平和兴趣现场生成，进度存在本机 SQLite。
+内容全部由 AI 按你的水平和兴趣现场生成，进度存在 PostgreSQL。
 
 ## 为什么和多邻国 / 墨墨不一样
 
@@ -23,10 +23,11 @@
 | 框架 | Next.js 16 App Router + React 19 |
 | 语言 | TypeScript 5.9 |
 | 样式 | Tailwind CSS 4（CSS-first `@theme`，没有 config 文件） |
-| 数据库 | SQLite（better-sqlite3），手写 SQL + 薄仓储层 |
+| 数据库 | PostgreSQL（pg），手写 SQL + 薄仓储层 |
 | 记忆算法 | FSRS（ts-fsrs），单词和语法点共用 |
 | AI | Anthropic SDK，结构化输出用 tool-forcing + zod 校验 |
-| 语音 | 浏览器原生 Web Speech API（朗读 + 识别），零成本 |
+| 语音 | 浏览器原生 Web Speech API（朗读 + 识别，零成本）+ StepFun 端到端实时语音（畅聊模式） |
+| 服务器 | 自定义 `server.mjs`：Next 请求处理 + WebSocket 中转 |
 | PWA | 手写 manifest + service worker |
 
 没用 ORM，没用 next-pwa —— SQL 和缓存策略都不复杂，自己写一遍反而说得清。
@@ -35,13 +36,16 @@
 
 ```bash
 npm install
-cp .env.local.example .env.local   # 填 ANTHROPIC_API_KEY
+cp .env.local.example .env.local   # 填 ANTHROPIC_API_KEY、PG 连接信息、STEP_API_KEY
 npm run icons                      # 生成 PWA 图标（零依赖，手写 PNG 编码）
 npm run dev                        # http://localhost:3000
 ```
 
-首次访问会自动建表、播种内置词表（约 130 个 A1/A2 口语高频词）和 24 个语法点，
+首次访问会自动建表、播种内置词表（85 个 A1/A2 口语高频词）、24 个语法点和 30 个主题，
 然后走引导页填水平/目标/兴趣。
+
+播种做的是「补齐」而不是「只在空库跑一次」：往 `src/data/` 里加词或语法点之后重启即可，
+已有的按 `term` / `slug` 跳过，AI 生成过的同名词不会被内置版本覆盖。
 
 生产：
 
@@ -58,8 +62,10 @@ npm run build && npm start
 |---|---|
 | `npm run typecheck` | tsc --noEmit |
 | `npm run icons` | 生成 `public/icons/*.png` |
-| `npm run db:reset` | 备份并清空数据库（`-- --hard` 跳过备份） |
+| `npm run db:check` | 数据库体检：连通性、缺表、各表行数、jsonb 列类型 |
+| `npm run db:reset` | 清空数据库（不带 `-- --yes` 只打印将删的表；`--dump out.sql` 先备份） |
 | `npm run smoke` | 端到端冒烟测试，打真实接口走真实 AI（`-- --fast` 跳过 AI 环节） |
+| `npm run probe:voice` | 探测实时语音接口，验证 README 里那两条硬约束还成不成立（`-- --quick` 只测连通性） |
 
 `smoke` 需要另一个终端先 `npm run dev`。它会往数据库写真实数据，也会花 token。
 
@@ -74,16 +80,38 @@ src/
 │   └── offline/          # SW 导航失败的兜底页
 ├── components/
 │   ├── stages/           # 七个环节各一个组件 + shared（查词卡、朗读、评分条）
-│   ├── chat-panel.tsx    # 对话面板，口语环节和对话页共用
+│   ├── chat-panel.tsx    # 逐句纠正的文本对话，口语环节和对话页共用
+│   ├── voice-chat-panel.tsx / voice-chat-launcher.tsx   # 畅聊（端到端语音）
 │   └── shadow-card.tsx   # 跟读打分
+├── hooks/
+│   ├── useSpeech.ts      # 浏览器原生朗读 / 识别
+│   └── useVoiceChat.ts   # 畅聊：录音降采样、流式播放、连接管理
 ├── lib/
 │   ├── ai/               # client（tool-forcing + 重试）、schemas（zod）、prompts
 │   ├── db/               # 连接、DDL、播种
+│   ├── realtime/         # protocol.mjs（共享常量）、relay.mjs（中转）、coaching.ts（教学旁路）
 │   ├── repo/             # words / grammar / session / stats / mistakes
 │   ├── scheduler.ts      # FSRS 封装
 │   └── pronounce.ts      # 发音一致度打分
 └── data/                 # 内置词表和语法点
 ```
+
+`server.mjs` 在项目根：它替代了 `next dev` / `next start`，因为 Next 的 Route Handler
+拿不住 WebSocket 长连接（连接会在响应生成后关掉），畅聊的中转只能挂在 `upgrade` 事件上。
+
+## 对话有两种模式
+
+两种模式刻意分开，不揉在一个界面里 —— 「每句都被纠」和「不被打断地把话说完」本质冲突，
+混在一起会互相削弱。两边落库完全一致，所以错题本、`produced_count`、每日统计共用一套。
+
+| | 逐句纠正（打字练） | 畅聊（开口聊） |
+|---|---|---|
+| 输入 | 打字，或浏览器语音识别 | 像打电话一样连续说，麦克风直接进模型 |
+| 回复 | 文本，可点朗读 | 语音，首个音频包约 1.4 秒 |
+| 纠正 | 和回复同时给出 | 说完之后异步补上，迟一两秒 |
+| 用的模型 | Claude（tool-forcing 出结构化纠正） | StepFun `stepaudio-2.5-realtime` + Claude 旁路分析 |
+
+畅聊的成本按音频时长计，和纯文本不是一个量级。跑起来后建议先盯几天用量。
 
 ## 首次生成会慢
 
@@ -109,3 +137,14 @@ src/
 所以打的分是"机器听到的词和目标句子有多接近"（LCS 对齐 + 编辑距离）。
 它能可靠告诉你哪个词没被听清，但没法诊断"th 的舌位不对"。
 另外 Firefox 不支持语音识别 —— 所有用到麦克风的地方都有打字兜底。
+
+**畅聊有两条实测出来的硬约束**，和 StepFun 官方文档不一致，改之前先跑 `npm run probe:voice`：
+
+1. 服务地址是 `/step_plan/v1/realtime`，不是文档写的 `/v1/realtime`（后者连不上）。
+2. 不能开 `server_vad`。带上它之后服务端会静默丢弃 `input_audio_transcription`，
+   拿不到学生原话的转写，教学闭环就断了。所以上游只能用手动 commit —— 但断句本身
+   放在浏览器端做（`src/hooks/useVoiceChat.ts` 里的 VAD），交互上仍然是连续通话，
+   不需要按住任何按钮。
+
+约束写在 `src/lib/realtime/protocol.mjs` 的头注释里。`probe:voice` 用真实回合验证 ——
+只测连通性说明不了转写还在不在。

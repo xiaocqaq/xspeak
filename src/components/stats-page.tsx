@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Flame, Mic, PenLine, TrendingUp } from 'lucide-react';
 import { Badge, Button, Card, Empty, ErrorNote, Spinner } from '@/components/ui';
+import { DayBars } from '@/components/charts';
 import { apiGet, apiPatch } from '@/lib/fetcher';
 import type { MistakeRow, StatsSummary } from '@/lib/types';
 import { cn } from '@/lib/cn';
@@ -57,8 +58,6 @@ export function StatsPage() {
   if (!d) return <div className="py-10"><Spinner /></div>;
 
   const s = d.summary;
-  const maxRev = Math.max(1, ...s.last14.map((x) => x.reviews));
-  const maxFc = Math.max(1, ...d.forecast.map((x) => x.c));
 
   return (
     <div className="space-y-4 py-2 fade-up">
@@ -113,23 +112,18 @@ export function StatsPage() {
 
       <Card>
         <h2 className="text-sm font-semibold">最近 14 天</h2>
-        <div className="mt-3 flex h-24 items-end gap-1">
-          {s.last14.map((x) => (
-            <div key={x.day} className="group relative flex-1">
-              <div
-                className="w-full rounded-t bg-brand-400 transition-colors group-hover:bg-brand-600"
-                style={{ height: `${Math.max(x.reviews ? 6 : 2, (x.reviews / maxRev) * 92)}px` }}
-              />
-              <span className="pointer-events-none absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[var(--text)] px-2 py-1 text-[11px] text-[var(--surface)] group-hover:block">
-                {x.day.slice(5)} · {x.reviews} 次 · {Math.round(x.minutes)} 分
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-1.5 flex justify-between text-[11px] dim">
-          <span>{s.last14[0]?.day.slice(5)}</span>
-          <span>今天</span>
-        </div>
+        <DayBars
+          className="mt-3"
+          height={96}
+          ariaLabel="最近 14 天每天的复习次数"
+          leftLabel={s.last14[0]?.day.slice(5)}
+          rightLabel="今天"
+          data={s.last14.map((x) => ({
+            day: x.day,
+            value: x.reviews,
+            tip: `${x.reviews} 次 · ${Math.round(x.minutes)} 分`,
+          }))}
+        />
       </Card>
 
       <Card>
@@ -137,26 +131,22 @@ export function StatsPage() {
           <h2 className="text-sm font-semibold">未来 14 天复习量</h2>
           <span className="text-xs dim">今天到期 {s.dueToday}</span>
         </div>
-        {d.forecast.length === 0 ? (
-          <p className="mt-2 text-sm dim">还没有排期。</p>
-        ) : (
-          <>
-            <div className="mt-3 flex h-16 items-end gap-1">
-              {d.forecast.map((f) => (
-                <div key={f.day} className="group relative flex-1">
-                  <div
-                    className={cn('w-full rounded-t', f.c > 40 ? 'bg-warm-500' : 'bg-brand-300')}
-                    style={{ height: `${Math.max(4, (f.c / maxFc) * 60)}px` }}
-                  />
-                  <span className="pointer-events-none absolute -top-7 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-[var(--text)] px-2 py-1 text-[11px] text-[var(--surface)] group-hover:block">
-                    {f.day.slice(5)} · {f.c}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-2 text-xs dim">橙色是超过 40 个的日子，那天可以少加新词。</p>
-          </>
-        )}
+        <DayBars
+          className="mt-3"
+          height={64}
+          ariaLabel="未来 14 天每天到期的词数"
+          leftLabel="今天"
+          rightLabel="+14 天"
+          warnAbove={40}
+          data={d.forecast.map((f) => ({
+            day: f.day,
+            value: f.c,
+            // 超过 40 个的日子标暖色：那天负担重，可以少加新词
+            tone: f.c > 40 ? ('warn' as const) : ('normal' as const),
+            tip: `${f.c} 个`,
+          }))}
+        />
+        <p className="mt-2 text-xs dim">赭黄是超过 40 个的日子，那天可以少加新词。</p>
       </Card>
 
       <Card>

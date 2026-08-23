@@ -4,7 +4,7 @@ import { enrollWords, markProduced, pushSeenContext, rateWord } from '@/lib/repo
 import { rateGrammar } from '@/lib/repo/grammar';
 import { recordMistakes } from '@/lib/repo/mistakes';
 import { bumpDaily } from '@/lib/repo/stats';
-import { getDb } from '@/lib/db';
+import { json, run } from '@/lib/db';
 import { scorePronunciation } from '@/lib/pronounce';
 
 export const runtime = 'nodejs';
@@ -67,36 +67,36 @@ const ReviewBody = z.object({
  */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, ReviewBody);
-    const db = getDb();
 
-    if (input.enroll.length) enrollWords(user.id, input.enroll);
+    if (input.enroll.length) await enrollWords(user.id, input.enroll);
 
     const results: { wordId: number; due: string; state: number }[] = [];
     let correct = 0;
     for (const w of input.words) {
-      const r = rateWord(user.id, w.wordId, w.rating, w.mode, w.elapsedMs);
-      if (w.context) pushSeenContext(user.id, w.wordId, w.context);
+      const r = await rateWord(user.id, w.wordId, w.rating, w.mode, w.elapsedMs);
+      if (w.context) await pushSeenContext(user.id, w.wordId, w.context);
       if (w.rating >= 3) correct++;
       results.push({ wordId: w.wordId, ...r });
     }
 
-    for (const g of input.grammar) rateGrammar(user.id, g.grammarId, g.rating, g.wrongCount);
-    if (input.produced.length) markProduced(user.id, input.produced);
-    if (input.mistakes.length) recordMistakes(user.id, input.mistakes);
+    for (const g of input.grammar) await rateGrammar(user.id, g.grammarId, g.rating, g.wrongCount);
+    if (input.produced.length) await markProduced(user.id, input.produced);
+    if (input.mistakes.length) await recordMistakes(user.id, input.mistakes);
 
     const speechScores: { target: string; score: number }[] = [];
     for (const s of input.speech) {
       const res = scorePronunciation(s.target, s.transcript);
-      db.prepare(
+      await run(
         `INSERT INTO speech_attempts (user_id, session_id, target, transcript, score, detail)
          VALUES (?, ?, ?, ?, ?, ?)`,
-      ).run(user.id, s.sessionId ?? null, s.target, s.transcript, res.score, JSON.stringify(res.words));
+        [user.id, s.sessionId ?? null, s.target, s.transcript, res.score, json(res.words)],
+      );
       speechScores.push({ target: s.target, score: res.score });
     }
 
-    bumpDaily(user.id, {
+    await bumpDaily(user.id, {
       reviews: input.words.length,
       correct,
       new_words: input.enroll.length,

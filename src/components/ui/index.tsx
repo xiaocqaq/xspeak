@@ -20,22 +20,25 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const variants = {
-    primary: 'bg-brand-600 text-white hover:bg-brand-700 disabled:bg-brand-300',
-    warm: 'bg-warm-500 text-white hover:brightness-95 disabled:opacity-50',
+    // 主按钮带一点投影，像盖下去的印章；hover 时轻微下沉
+    primary:
+      'bg-brand-600 text-white shadow-[0_1px_2px_rgb(35_76_58/0.25)] hover:bg-brand-700 active:translate-y-px disabled:bg-brand-300 disabled:shadow-none',
+    warm: 'bg-warm-500 text-white shadow-[0_1px_2px_rgb(127_82_37/0.25)] hover:bg-warm-600 active:translate-y-px disabled:opacity-50',
     outline:
-      'border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] text-[var(--text)]',
+      'border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-2)] text-[var(--text)] active:translate-y-px',
     ghost: 'hover:bg-[var(--surface-2)] text-[var(--text)]',
-    danger: 'bg-red-600 text-white hover:bg-red-700',
+    danger: 'bg-red-700 text-white hover:bg-red-800 active:translate-y-px',
   };
+  // 手机上 44px 是可靠的点击高度下限，md 因此给到 h-11
   const sizes = {
-    sm: 'h-8 px-3 text-sm rounded-lg gap-1.5',
-    md: 'h-10 px-4 text-sm rounded-xl gap-2',
+    sm: 'h-9 px-3 text-sm rounded-lg gap-1.5',
+    md: 'h-11 px-4 text-sm rounded-[0.625rem] gap-2',
     lg: 'h-12 px-6 text-base rounded-xl gap-2',
   };
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center font-medium transition-colors',
+        'inline-flex items-center justify-center font-medium transition-all duration-100',
         'disabled:cursor-not-allowed disabled:opacity-60',
         variants[variant],
         sizes[size],
@@ -50,9 +53,14 @@ export function Button({
   );
 }
 
-export function Card({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
+export function Card({
+  className,
+  children,
+  lifted,
+  ...rest
+}: HTMLAttributes<HTMLDivElement> & { lifted?: boolean }) {
   return (
-    <div className={cn('card p-5', className)} {...rest}>
+    <div className={cn('card p-4 sm:p-5', lifted && 'card-lifted', className)} {...rest}>
       {children}
     </div>
   );
@@ -67,12 +75,13 @@ export function Badge({
   tone?: 'neutral' | 'brand' | 'warm' | 'danger' | 'success';
   className?: string;
 }) {
+  // 全部换成暖色系：amber/emerald 那套偏冷偏艳，和纸感不搭
   const tones = {
     neutral: 'bg-[var(--surface-2)] text-[var(--text-dim)]',
-    brand: 'bg-brand-100 text-brand-700 dark:bg-brand-800 dark:text-brand-100',
-    warm: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200',
-    danger: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200',
-    success: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
+    brand: 'bg-brand-100 text-brand-700 dark:bg-brand-800/60 dark:text-brand-100',
+    warm: 'bg-warm-100 text-warm-700 dark:bg-warm-800/50 dark:text-warm-200',
+    danger: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+    success: 'bg-brand-100 text-brand-700 dark:bg-brand-800/60 dark:text-brand-100',
   };
   return (
     <span
@@ -91,14 +100,17 @@ export function Progress({ value, className }: { value: number; className?: stri
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div
-      className={cn('h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]', className)}
+      className={cn(
+        'h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)] inset-shadow-2xs',
+        className,
+      )}
       role="progressbar"
       aria-valuenow={Math.round(pct)}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
+        className="h-full rounded-full bg-brand-500 transition-[width] duration-500 ease-out"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -109,7 +121,7 @@ export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLText
   return (
     <textarea
       className={cn(
-        'w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-sm',
+        'w-full rounded-[0.625rem] border border-[var(--border)] bg-[var(--surface)] p-3 text-sm',
         'placeholder:text-[var(--text-dim)] focus:border-brand-400 focus:outline-none',
         className,
       )}
@@ -125,7 +137,8 @@ export function Input({
   return (
     <input
       className={cn(
-        'h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm',
+        // 手机上 16px 以下的字号会触发 Safari 自动放大，所以移动端保持 text-base
+        'h-11 w-full rounded-[0.625rem] border border-[var(--border)] bg-[var(--surface)] px-3 text-base sm:h-10 sm:text-sm',
         'placeholder:text-[var(--text-dim)] focus:border-brand-400 focus:outline-none',
         className,
       )}
@@ -145,7 +158,7 @@ export function Spinner({ label = '加载中' }: { label?: string }) {
 
 export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+    <div className="rounded-[0.625rem] border border-red-200 bg-red-50 p-3.5 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
       <p className="whitespace-pre-wrap">{message}</p>
       {onRetry && (
         <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
@@ -156,11 +169,25 @@ export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () 
   );
 }
 
-export function Empty({ title, hint }: { title: string; hint?: string }) {
+export function Empty({
+  title,
+  hint,
+  icon,
+  action,
+}: {
+  title: string;
+  hint?: string;
+  /** 可选图标，给空状态一个视觉落点，不然大片留白显得像出错了 */
+  icon?: ReactNode;
+  /** 空状态最该做的下一步动作 */
+  action?: ReactNode;
+}) {
   return (
-    <div className="rounded-xl border border-dashed border-[var(--border)] p-8 text-center">
+    <div className="flex flex-col items-center rounded-[0.625rem] border border-dashed border-[var(--border)] px-6 py-9 text-center">
+      {icon && <div className="mb-2.5 text-[var(--text-dim)]">{icon}</div>}
       <p className="font-medium">{title}</p>
-      {hint && <p className="mt-1 text-sm dim">{hint}</p>}
+      {hint && <p className="mt-1 max-w-xs text-sm dim">{hint}</p>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

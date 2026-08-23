@@ -25,8 +25,9 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#faf9f7' },
-    { media: '(prefers-color-scheme: dark)', color: '#16181d' },
+    // 和 globals.css 的 --bg 保持一致，否则 PWA 状态栏会和页面顶端割裂
+    { media: '(prefers-color-scheme: light)', color: '#faf8f5' },
+    { media: '(prefers-color-scheme: dark)', color: '#16130f' },
   ],
 };
 

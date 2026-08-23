@@ -18,8 +18,8 @@ export async function GET(req: Request) {
   const regenerate = url.searchParams.get('regenerate') === '1';
 
   return handle(async () => {
-    const user = currentUser();
-    const session = getOrCreateToday(user);
+    const user = await currentUser();
+    const session = await getOrCreateToday(user);
     const { payload, meta } = await buildStage(user, session, parsed.data as Stage, regenerate);
     return { ...meta, payload };
   });
@@ -33,12 +33,12 @@ const DoneBody = z.object({
 /** 标记环节完成，累加当天用时。 */
 export async function POST(req: Request) {
   return handle(async () => {
-    const user = currentUser();
+    const user = await currentUser();
     const input = await body(req, DoneBody);
-    const session = getOrCreateToday(user);
-    const updated = completeStage(session.id, input.stage as Stage, input.minutes);
-    if (input.minutes > 0) bumpDaily(user.id, { minutes: input.minutes });
-    const s = updated ?? getSessionById(session.id)!;
+    const session = await getOrCreateToday(user);
+    const updated = await completeStage(session.id, input.stage as Stage, input.minutes);
+    if (input.minutes > 0) await bumpDaily(user.id, { minutes: input.minutes });
+    const s = updated ?? (await getSessionById(session.id))!;
     return {
       stagesDone: s.stages_done,
       stageIndex: s.stage_index,
