@@ -61,7 +61,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(port, hostname, () => {
-  console.log(`▲ 林习英语  http://${hostname}:${port}`);
+  console.log(`▲ XLearn  http://${hostname}:${port}`);
   console.log(`  语音中转  ws://${hostname}:${port}${REALTIME_PATH}`);
   if (!process.env.STEP_API_KEY?.trim()) {
     console.warn('  ⚠ 没配 STEP_API_KEY，畅聊模式会连不上。在 .env.local 里补上。');

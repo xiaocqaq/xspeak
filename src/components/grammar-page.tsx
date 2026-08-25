@@ -77,8 +77,8 @@ export function GrammarPage() {
                           : g.state === 3
                             ? 'bg-red-500 text-white'
                             : g.state === 2
-                              ? 'bg-emerald-500 text-white'
-                              : 'bg-amber-500 text-white',
+                              ? 'bg-brand-500 text-white'
+                              : 'bg-warm-500 text-white',
                       )}
                     >
                       {g.ord}
@@ -119,9 +119,9 @@ export function GrammarPage() {
                       )}
 
                       {g.pitfalls.length > 0 && (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-900/25">
+                        <div className="rounded-lg border border-warm-200 bg-warm-50 p-3 dark:border-warm-900 dark:bg-warm-900/25">
                           <div className="flex items-center gap-1.5">
-                            <AlertTriangle className="size-3.5 text-amber-500" aria-hidden />
+                            <AlertTriangle className="size-3.5 text-warm-500" aria-hidden />
                             <p className="text-xs font-semibold">容易踩的坑</p>
                           </div>
                           <ul className="mt-1.5 space-y-1">

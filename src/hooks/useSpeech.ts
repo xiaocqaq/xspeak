@@ -8,6 +8,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readPace, subscribePace } from '@/lib/pace-store';
+import { pace } from '@/lib/voice-options';
+import type { SpeechPace } from '@/lib/types';
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -35,6 +38,14 @@ export function useTts(preferredVoice?: string) {
   const [speaking, setSpeaking] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  /**
+   * 语速档位。朗读按钮散布在十几个纯展示组件里，都拿不到用户档案，
+   * 所以从 localStorage 缓存同步读（真值在数据库，由 /api/profile 回填）。
+   * 放 ref 而不是 state：speak 是回调，只在触发那一刻需要最新值，
+   * 档位变化不该让所有挂了朗读按钮的组件重渲染。
+   */
+  const paceRef = useRef<SpeechPace>(readPace());
+  useEffect(() => subscribePace((p) => (paceRef.current = p)), []);
 
   useEffect(() => {
     if (!supported) return;
@@ -63,14 +74,26 @@ export function useTts(preferredVoice?: string) {
 
   const speak = useCallback(
     // voice 用于设置页试听某个具体嗓音，其余场景交给 pickVoice
-    (text: string, opts?: { rate?: number; onEnd?: () => void; voice?: SpeechSynthesisVoice }) => {
+    (
+      text: string,
+      opts?: {
+        rate?: number;
+        /** 在当前语速档位上再放慢一档，用于「慢速朗读」按钮 */
+        slow?: boolean;
+        onEnd?: () => void;
+        voice?: SpeechSynthesisVoice;
+      },
+    ) => {
       if (!supported || !text.trim()) return;
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       const v = opts?.voice ?? pickVoice();
       if (v) u.voice = v;
       u.lang = v?.lang ?? 'en-US';
-      u.rate = opts?.rate ?? 0.92; // 略慢，A1 水平听得清
+      // slow 做成相对的：把「慢速」写死成 0.7 的话，用户已经选了慢档时
+      // 这个按钮就没有区分度了，选了快档时又会一下掉两档。
+      const base = pace(paceRef.current).webSpeechRate;
+      u.rate = opts?.rate ?? (opts?.slow ? Math.max(0.5, base - 0.22) : base);
       u.onstart = () => setSpeaking(true);
       u.onend = () => {
         setSpeaking(false);

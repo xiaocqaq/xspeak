@@ -27,6 +27,13 @@ export type StartConfig = {
   openingEn?: string | null;
   openingZh?: string | null;
   targetWordIds?: number[];
+  /**
+   * 目标词原文。
+   *
+   * 和 targetWordIds 并存不是冗余：id 用来落库和判定 produced_count，
+   * 而畅聊的 instructions 需要的是词本身 —— 中转层不查库，拿不到 id 对应的词。
+   */
+  targetTerms?: string[];
   sessionId?: number | null;
 };
 
@@ -170,8 +177,8 @@ export function ChatPanel({
                     className={cn(
                       'rounded-xl px-3 py-2 text-xs',
                       corr.has_issue
-                        ? 'bg-amber-50 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100'
-                        : 'bg-emerald-50 text-emerald-900 dark:bg-emerald-900/25 dark:text-emerald-100',
+                        ? 'bg-warm-50 text-warm-900 dark:bg-warm-900/30 dark:text-warm-100'
+                        : 'bg-brand-50 text-brand-900 dark:bg-brand-900/25 dark:text-brand-100',
                     )}
                   >
                     <div className="flex items-center gap-1.5 font-medium">
@@ -207,7 +214,7 @@ export function ChatPanel({
 
                 {m.role === 'assistant' && m.feedback?.suggestion_en && (
                   <div className="flex items-start gap-1.5 rounded-xl border border-dashed border-[var(--border)] px-3 py-2 text-xs">
-                    <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-amber-500" aria-hidden />
+                    <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-warm-500" aria-hidden />
                     <span className="en flex-1">{m.feedback.suggestion_en}</span>
                     <button
                       type="button"
@@ -233,7 +240,7 @@ export function ChatPanel({
       </div>
 
       {error && <ErrorNote message={error} />}
-      {stt.error && <p className="text-xs text-amber-600 dark:text-amber-400">{stt.error}</p>}
+      {stt.error && <p className="text-xs text-warm-600 dark:text-warm-400">{stt.error}</p>}
 
       <form
         className="sticky bottom-0 flex items-end gap-2 bg-[var(--bg)] pt-1"

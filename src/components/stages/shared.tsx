@@ -25,7 +25,7 @@ export function Speak({
   return (
     <button
       type="button"
-      onClick={() => speak(text, { rate: slow ? 0.7 : 0.92 })}
+      onClick={() => speak(text, { slow })}
       aria-label={label ?? `朗读：${text.slice(0, 40)}`}
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 transition-colors',
@@ -237,11 +237,18 @@ export function RatingRow({
   intervals?: Record<number, string>;
   busy?: boolean;
 }) {
+  /**
+   * 四档评分。
+   *
+   * 不用四个实心色块：那样四个按钮互相争抢注意力，而且原本「记得」和「很容易」
+   * 同色，根本区分不出。改成半透明 fill 底 + 彩色文字，四档色相各不相同，
+   * 这也是 iOS 里一组平级选项的标准做法。
+   */
   const buttons = [
-    { r: 1 as const, zh: '忘了', cls: 'bg-red-500 hover:bg-red-600' },
-    { r: 2 as const, zh: '有点难', cls: 'bg-amber-500 hover:bg-amber-600' },
-    { r: 3 as const, zh: '记得', cls: 'bg-emerald-500 hover:bg-emerald-600' },
-    { r: 4 as const, zh: '很容易', cls: 'bg-brand-500 hover:bg-brand-600' },
+    { r: 1 as const, zh: '忘了', cls: 'bg-[var(--danger)]/12 text-[var(--danger)]' },
+    { r: 2 as const, zh: '有点难', cls: 'bg-warm-500/14 text-warm-700 dark:text-warm-400' },
+    { r: 3 as const, zh: '记得', cls: 'bg-brand-500/12 text-brand-700 dark:text-brand-300' },
+    { r: 4 as const, zh: '很容易', cls: 'bg-[var(--success)]/14 text-[var(--success)]' },
   ];
   return (
     <div className="grid grid-cols-4 gap-2">
@@ -252,13 +259,16 @@ export function RatingRow({
           disabled={busy}
           onClick={() => onRate(b.r)}
           className={cn(
-            'flex flex-col items-center gap-0.5 rounded-xl py-2.5 text-sm font-medium text-white transition-colors',
-            'disabled:opacity-50',
+            // 评分是每天要点几十次的动作，手感差一点就很磨人：
+            // 44px 高、去掉移动端双击缩放延迟、按下缩放反馈
+            'flex min-h-11 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-xl text-[13px] font-medium',
+            'transition-all duration-300 [transition-timing-function:var(--ease-standard)] active:scale-[0.96]',
+            'disabled:opacity-50 disabled:active:scale-100',
             b.cls,
           )}
         >
           {b.zh}
-          {intervals?.[b.r] && <span className="text-[10px] font-normal opacity-80">{intervals[b.r]}</span>}
+          {intervals?.[b.r] && <span className="text-[10px] font-normal opacity-70">{intervals[b.r]}</span>}
         </button>
       ))}
     </div>
@@ -280,8 +290,16 @@ export function Choices({
   disabled?: boolean;
 }) {
   return (
-    <div className="space-y-2">
-      {options.map((opt) => {
+    /**
+     * iOS 的分组列表：一个容器包住所有选项，内部靠分隔线切开。
+     * 不能给每项各自描边 —— 那会变成四个割裂的方块，是这套体系里最扭的形态。
+     *
+     * 底色用 black/white 透明叠而不是 --surface-2：这组列表嵌在卡片里，
+     * 必须比卡片更沉才对（嵌越深越暗）。用 --surface-2 会比卡片还亮，
+     * 看起来像浮在卡片上的另一块面板，层级就反了。
+     */
+    <div className="overflow-hidden rounded-2xl bg-black/[0.04] dark:bg-black/40">
+      {options.map((opt, i) => {
         const isPicked = picked === opt;
         const isAnswer = opt === answer;
         const revealed = picked !== null;
@@ -292,16 +310,26 @@ export function Choices({
             disabled={revealed || disabled}
             onClick={() => onPick(opt)}
             className={cn(
-              'flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors',
-              !revealed && 'border-[var(--border)] hover:border-brand-400 hover:bg-[var(--surface-2)]',
-              revealed && isAnswer && 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30',
-              revealed && isPicked && !isAnswer && 'border-red-500 bg-red-50 dark:bg-red-900/30',
-              revealed && !isAnswer && !isPicked && 'border-[var(--border)] opacity-50',
+              'flex w-full touch-manipulation items-center gap-3 px-4 text-left',
+              // 48px 行高：选项是这页的主要动作，比 44px 下限再宽裕一点
+              'min-h-12 py-3',
+              'transition-colors duration-300 [transition-timing-function:var(--ease-standard)]',
+              // 分隔线从第二项开始
+              i > 0 && 'border-t-[0.5px] border-[var(--hairline)]',
+              !revealed && 'active:bg-black/5 dark:active:bg-white/10',
+              // 揭晓后：对的涂绿、选错的涂红、无关的变淡
+              revealed && isAnswer && 'bg-[var(--success)]/15',
+              revealed && isPicked && !isAnswer && 'bg-[var(--danger)]/15',
+              revealed && !isAnswer && !isPicked && 'opacity-40',
             )}
           >
-            <span className="en flex-1 text-sm">{opt}</span>
-            {revealed && isAnswer && <Check className="size-4 shrink-0 text-emerald-600" aria-hidden />}
-            {revealed && isPicked && !isAnswer && <X className="size-4 shrink-0 text-red-600" aria-hidden />}
+            <span className="en flex-1 text-[17px]">{opt}</span>
+            {revealed && isAnswer && (
+              <Check className="size-5 shrink-0 text-[var(--success)]" aria-hidden />
+            )}
+            {revealed && isPicked && !isAnswer && (
+              <X className="size-5 shrink-0 text-[var(--danger)]" aria-hidden />
+            )}
           </button>
         );
       })}
@@ -310,24 +338,26 @@ export function Choices({
 }
 
 /** 每个环节顶部的说明条。 */
+/**
+ * 环节开头的一句说明。
+ *
+ * 以前是深蓝底满宽通栏，视觉重量比题目本身还大 —— 它只是句提示，
+ * 不应该抢主角。现在降成次级正文：无底色，靠字号和行高自己站住。
+ */
 export function StageIntro({ children, tone = 'brand' }: { children: React.ReactNode; tone?: 'brand' | 'neutral' }) {
   return (
-    <p
-      className={cn(
-        'rounded-xl p-3 text-sm',
-        tone === 'brand'
-          ? 'bg-brand-50 text-brand-900 dark:bg-brand-900/30 dark:text-brand-100'
-          : 'bg-[var(--surface-2)]',
-      )}
-    >
+    <p className={cn('text-[13px] leading-relaxed', tone === 'brand' ? 'dim' : 'dim')}>
       {children}
     </p>
   );
 }
 
+/**
+ * 答题后的讲解块。用 fill 底色不描边，去掉左侧的彩色竖线（那是 Material 的语言）。
+ */
 export function Explain({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-3 rounded-xl border-l-2 border-brand-400 bg-[var(--surface-2)] p-3 text-sm">
+    <div className="mt-4 rounded-xl bg-[var(--surface-2)] p-4 text-sm">
       {children}
     </div>
   );
@@ -335,8 +365,8 @@ export function Explain({ children }: { children: React.ReactNode }) {
 
 export function StageLoading({ what }: { what: string }) {
   return (
-    <div className="flex flex-col items-center gap-3 py-16 text-center">
-      <Loader2 className="size-8 animate-spin text-brand-500" aria-hidden />
+    <div className="flex flex-col items-center gap-4 py-16 text-center">
+      <Loader2 className="size-8 animate-spin text-brand-500 dark:text-brand-600" aria-hidden />
       <p className="text-sm font-medium">AI 正在为你生成{what}</p>
       <p className="text-xs dim">内容按你的水平和今天的主题现做，大约十几秒</p>
     </div>
@@ -345,7 +375,7 @@ export function StageLoading({ what }: { what: string }) {
 
 export function DoneBanner({ text, onNext }: { text: string; onNext: () => void }) {
   return (
-    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-900/25">
+    <div className="rounded-xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-900 dark:bg-brand-900/25">
       <div className="flex items-center gap-2">
         <Badge tone="success">完成</Badge>
         <p className="text-sm">{text}</p>

@@ -70,7 +70,7 @@ export function WritingStage({ payload, meta, onDone, onRegenerate, submitting }
                 className={cn(
                   'en rounded-md px-2 py-0.5 text-xs transition-colors',
                   used.has(w)
-                    ? 'bg-emerald-500 text-white'
+                    ? 'bg-brand-500 text-white'
                     : 'border border-dashed border-[var(--border)] text-[var(--text-dim)]',
                 )}
               >
@@ -139,7 +139,7 @@ export function WritingStage({ payload, meta, onDone, onRegenerate, submitting }
               <div
                 className={cn(
                   'grid size-12 shrink-0 place-items-center rounded-full text-base font-bold text-white',
-                  result.score >= 85 ? 'bg-emerald-500' : result.score >= 65 ? 'bg-amber-500' : 'bg-red-500',
+                  result.score >= 85 ? 'bg-brand-500' : result.score >= 65 ? 'bg-warm-500' : 'bg-red-500',
                 )}
               >
                 {result.score}
@@ -160,11 +160,11 @@ export function WritingStage({ payload, meta, onDone, onRegenerate, submitting }
               <p className="text-sm font-semibold">逐条看</p>
               <ul className="mt-3 space-y-3">
                 {result.issues.map((it, i) => (
-                  <li key={i} className="border-l-2 border-amber-400 pl-3">
+                  <li key={i} className="border-l-2 border-warm-400 pl-3">
                     <div className="flex flex-wrap items-center gap-1.5 text-sm">
                       <span className="en text-red-600 line-through dark:text-red-400">{it.wrong}</span>
                       <span className="dim">→</span>
-                      <span className="en text-emerald-700 dark:text-emerald-400">{it.correct}</span>
+                      <span className="en text-brand-700 dark:text-brand-400">{it.correct}</span>
                       <Badge>{kindZh(it.kind)}</Badge>
                     </div>
                     <p className="mt-1 text-xs dim">{it.note_zh}</p>
@@ -189,7 +189,7 @@ export function WritingStage({ payload, meta, onDone, onRegenerate, submitting }
 
           {result.used_target_words.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
-              <CheckCircle2 className="size-4 text-emerald-500" aria-hidden />
+              <CheckCircle2 className="size-4 text-brand-500" aria-hidden />
               <span className="text-xs dim">主动用出：</span>
               {result.used_target_words.map((w) => (
                 <Badge key={w} tone="success">
@@ -241,7 +241,7 @@ function Highlighted({ text, issues }: { text: string; issues: CorrectionData['i
     out.push(
       <mark
         key={`m${i}`}
-        className="rounded bg-amber-200 px-0.5 text-inherit dark:bg-amber-800/60"
+        className="rounded bg-warm-200 px-0.5 text-inherit dark:bg-warm-800/60"
       >
         {text.slice(m.start, m.end)}
       </mark>,

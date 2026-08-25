@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, PartyPopper, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Menu, PartyPopper, RefreshCw } from 'lucide-react';
 import { Button, Card, ErrorNote } from '@/components/ui';
 import { StageLoading } from './shared';
+import { StageDrawer, StageSidebar } from './stage-nav';
 import { WarmupStage } from './warmup';
 import { NewWordsStage } from './newwords';
 import { GrammarStage } from './grammar';
@@ -33,6 +34,8 @@ export function SessionRunner() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [allDone, setAllDone] = useState(false);
+  /** 手机上环节抽屉是否开着 */
+  const [navOpen, setNavOpen] = useState(false);
   const enteredAt = useRef(Date.now());
 
   // 已经预取过的环节，避免重复打 AI
@@ -110,24 +113,46 @@ export function SessionRunner() {
 
   if (allDone) return <Finished />;
 
-  const idx = STAGES.indexOf(stage);
   const info = STAGE_META[stage];
 
   return (
-    <div className="space-y-4 py-2">
-      <header className="space-y-3">
-        <div className="flex items-center gap-2">
+    /**
+     * 两列：左侧环节导航常驼（宽屏），右侧答题区。
+     * 答题区自己有宽度上限：英文句子一行超过 ~70 字符就难读，
+     * 不能因为屏幕宽就把题目拉到 900px。
+     */
+    <div className="flex gap-8">
+      <StageSidebar current={stage} done={data?.stagesDone ?? []} onPick={setStage} />
+      <StageDrawer
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+        current={stage}
+        done={data?.stagesDone ?? []}
+        onPick={setStage}
+      />
+
+      <div className="min-w-0 flex-1 space-y-6 md:max-w-[34rem]">
+        <header className="flex items-center gap-2">
+          {/* 手机上这个按钮开抽屉；宽屏上侧栅已经常驼，改成回首页 */}
+          <button
+            type="button"
+            onClick={() => setNavOpen(true)}
+            aria-label="切换环节"
+            className="-ml-2 rounded-lg p-2 text-brand-500 transition-colors duration-300 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-2)] md:hidden dark:text-brand-600"
+          >
+            <Menu className="size-5" aria-hidden />
+          </button>
           <Link
             href="/"
             aria-label="回首页"
-            className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
+            className="-ml-2 hidden rounded-lg p-2 text-brand-500 transition-colors duration-300 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-2)] md:block dark:text-brand-600"
           >
             <ArrowLeft className="size-5" aria-hidden />
           </Link>
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-semibold">{info.zh}</h1>
             <p className="truncate text-xs dim">
-              {data?.themeZh ?? '今日主题'} · 第 {idx + 1}/{STAGES.length} 步 · 约 {info.minutes} 分钟
+              {data?.themeZh ?? '今日主题'} · 约 {info.minutes} 分钟
             </p>
           </div>
           <button
@@ -135,51 +160,35 @@ export function SessionRunner() {
             onClick={() => load(stage, true)}
             disabled={loading}
             aria-label="重新生成这一环节"
-            className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+            className="-mr-2 rounded-lg p-2 text-[var(--text-dim)] transition-colors duration-300 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-2)] disabled:opacity-40"
           >
             <RefreshCw className={cn('size-4', loading && 'animate-spin')} aria-hidden />
           </button>
-        </div>
-
-        <ol className="flex gap-1" aria-label="环节进度">
-          {STAGES.map((s, i) => {
-            const done = data?.stagesDone.includes(s);
-            return (
-              <li key={s} className="flex-1">
-                <button
-                  type="button"
-                  onClick={() => setStage(s)}
-                  aria-label={STAGE_META[s].zh}
-                  aria-current={s === stage ? 'step' : undefined}
-                  className={cn(
-                    'h-1.5 w-full rounded-full transition-colors',
-                    s === stage
-                      ? 'bg-brand-600'
-                      : done
-                        ? 'bg-emerald-400'
-                        : i < idx
-                          ? 'bg-[var(--surface-2)]'
-                          : 'bg-[var(--surface-2)]',
-                  )}
-                />
-              </li>
-            );
-          })}
-        </ol>
-      </header>
+        </header>
+        {/*
+          原来这里有一条七段进度细线。有了侧栅/抽屉后它是重复信息，
+          而且两个地方都能切环节反而让人迟疑该点哪个，所以去掉了。
+        */}
 
       {error && <ErrorNote message={error} onRetry={() => load(stage)} />}
       {loading && <StageLoading what={info.zh} />}
 
       {data && !loading && (
         <StageBody
-          stage={stage}
+          /*
+           * 用 data.stage 而不是外层的 stage：
+           * 切环节时 stage 先变，data 还是上一个环节的，用 stage 分派会把
+           * 旧 payload 交给新组件，字段对不上就直接报 undefined.length。
+           * data.stage 是后端返回的、和 payload 同一批的值，两者永远一致。
+           */
+          stage={data.stage}
           data={data}
           onDone={onDone}
           onRegenerate={() => load(stage, true)}
           submitting={submitting}
         />
       )}
+      </div>
     </div>
   );
 }

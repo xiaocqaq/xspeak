@@ -31,7 +31,14 @@ export type ClientToServer =
       scenarioZh: string;
       /** 今天要求说出口的词，写进 instructions 引导 AI 把话题带过去 */
       targetTerms: string[];
+      level?: string;
+      /** StepFun realtime 的音色 id。不在白名单里会被中转层换成默认音色 */
       voice?: string;
+      /**
+       * 语速档位。realtime 没有语速参数，中转层只能把它翻成 instructions 里的
+       * 一句软要求；真正的倍速调整在浏览器端播放时做。
+       */
+      paceKey?: string;
     }
   /** 一片麦克风音频，base64 的 PCM16。 */
   | { type: 'audio'; audio: string }

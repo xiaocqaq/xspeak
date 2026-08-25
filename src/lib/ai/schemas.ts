@@ -190,6 +190,29 @@ export const ExtractPayload = z.object({
     .describe('文中出现的值得讲的句式'),
 });
 
+/**
+ * AI 对话的场景生成。
+ *
+ * 和其他 payload 的区别：这里生成的是「练什么」的容器，不是练习内容本身。
+ * ai_role 必须是英文 —— 它会原样进 realtime 的 instructions；其余字段给界面看。
+ */
+export const ScenarioItem = z.object({
+  zh: z.string().describe('场景名，4-8 个中文字，像「和房东谈租房」这种一眼看懂的'),
+  hint: z.string().describe('这个场景里会聊到什么，中文，10-18 字，用顿号分隔要点'),
+  ai_role: z
+    .string()
+    .describe('AI 扮演的角色，英文，形如 "a friendly barista at a busy coffee shop"，不要写成句子'),
+  opening_en: z.string().describe('AI 的第一句话，英文，1-2 句，自然像真人开口'),
+  opening_zh: z.string().describe('开场白的中文翻译'),
+  target_terms: z
+    .array(z.string())
+    .describe('这个场景真的用得上的今日目标词，从给定列表里挑，挑不到就空数组'),
+});
+
+export const ScenariosPayload = z.object({
+  scenarios: z.array(ScenarioItem).min(1).max(8),
+});
+
 export type WarmupData = z.infer<typeof WarmupPayload>;
 export type NewWordsData = z.infer<typeof NewWordsPayload>;
 export type GrammarData = z.infer<typeof GrammarPayload>;
@@ -203,3 +226,5 @@ export type CoachingData = z.infer<typeof CoachingPayload>;
 export type LookupData = z.infer<typeof LookupPayload>;
 export type ExtractData = z.infer<typeof ExtractPayload>;
 export type NewWordData = z.infer<typeof NewWord>;
+export type ScenariosData = z.infer<typeof ScenariosPayload>;
+export type ScenarioItemData = z.infer<typeof ScenarioItem>;

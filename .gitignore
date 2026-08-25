@@ -25,3 +25,6 @@ npm-debug.log*
 coverage/
 .idea/
 .vscode/
+
+# ECDICT 导入缓存（63MB，用 npm run dict:import 重新下载）
+ecdict.csv

@@ -1,5 +1,5 @@
 {
-  "name": "linxi-english",
+  "name": "xlearn",
   "version": "0.1.0",
   "private": true,
   "description": "AI 英语学习工作台：每天 30 分钟，一个主题串起复习/新词/语法/听力/阅读/口语/写作",
@@ -13,7 +13,8 @@
     "db:check": "node scripts/check-db.mjs",
     "db:reset": "node scripts/reset-db.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "probe:voice": "node scripts/probe-realtime.mjs"
+    "probe:voice": "node scripts/probe-realtime.mjs",
+    "dict:import": "node scripts/import-dict.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.120.0",
