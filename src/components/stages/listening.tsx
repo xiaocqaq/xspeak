@@ -44,7 +44,8 @@ export function ListeningStage({ payload, onDone, onRegenerate, submitting }: St
         return;
       }
       setLine(i);
-      speak(dialogue[i].text_en, { rate: slow ? 0.7 : 0.9, onEnd: () => step(i + 1) });
+      // 不写死 rate：交给 useTts 按用户的语速档位算，slow 只表示「再慢一档」
+      speak(dialogue[i].text_en, { slow, onEnd: () => step(i + 1) });
     };
     step(0);
   };
@@ -68,7 +69,7 @@ export function ListeningStage({ payload, onDone, onRegenerate, submitting }: St
       <StageIntro>{payload.scene_zh}</StageIntro>
 
       {!supported && (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-900/25">
+        <p className="rounded-xl border border-warm-200 bg-warm-50 p-3 text-sm dark:border-warm-900 dark:bg-warm-900/25">
           这个浏览器不支持语音合成，听力环节只能看文本。换 Chrome / Edge / Safari 就能听。
         </p>
       )}
@@ -98,7 +99,7 @@ export function ListeningStage({ payload, onDone, onRegenerate, submitting }: St
                 cancelRef.current = true;
                 setPlayingAll(false);
                 setLine(i);
-                speak(d.text_en, { rate: slow ? 0.7 : 0.9 });
+                speak(d.text_en, { slow });
               }}
               className={cn(
                 'flex w-full items-start gap-3 rounded-xl p-3 text-left transition-colors',

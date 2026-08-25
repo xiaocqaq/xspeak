@@ -1,7 +1,7 @@
 import { getPool, all as rawAll, one as rawOne, run as rawRun, withTx as rawWithTx, type Exec, type Params } from './pool';
 import { DDL, SCHEMA_LOCK_KEY } from './schema';
 import { seedBuiltins } from './seed';
-import type { UserProfile } from '@/lib/types';
+import type { SpeechPace, UserProfile } from '@/lib/types';
 
 /**
  * 数据访问入口。仓储层只从这里取查询助手，不直接碰 pool。
@@ -98,8 +98,17 @@ export async function getOrCreateUser(): Promise<UserProfile> {
     daily_minutes: Number(row.daily_minutes),
     new_words_per_day: Number(row.new_words_per_day),
     voice: (row.voice as string | null) ?? null,
+    ai_voice: (row.ai_voice as string | null) ?? null,
+    // 老库刚补上列时可能是 null，也要防住手写进去的非法值
+    speech_pace: normalizePace(row.speech_pace),
     onboarded: Number(row.onboarded),
   };
+}
+
+const PACES: SpeechPace[] = ['slow', 'normal', 'fast'];
+
+function normalizePace(v: unknown): SpeechPace {
+  return PACES.includes(v as SpeechPace) ? (v as SpeechPace) : 'normal';
 }
 
 /**

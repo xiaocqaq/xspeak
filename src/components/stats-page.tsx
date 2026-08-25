@@ -71,7 +71,7 @@ export function StatsPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Big icon={<Flame className="size-4 text-warm-500" />} label="连续学习" value={`${s.streak} 天`} />
         <Big
-          icon={<TrendingUp className="size-4 text-emerald-500" />}
+          icon={<TrendingUp className="size-4 text-brand-500" />}
           label="30 天留存率"
           value={s.retention30 == null ? '—' : `${s.retention30}%`}
           hint="复习时第一次就答对的比例"
@@ -96,16 +96,16 @@ export function StatsPage() {
           <span className="text-xs dim">共 {s.totalWords} 个</span>
         </div>
         <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-[var(--surface-2)]">
-          <Bar n={s.matureWords} total={s.totalWords} className="bg-emerald-500" />
-          <Bar n={s.learningWords} total={s.totalWords} className="bg-amber-500" />
+          <Bar n={s.matureWords} total={s.totalWords} className="bg-brand-500" />
+          <Bar n={s.learningWords} total={s.totalWords} className="bg-warm-500" />
         </div>
         <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <Legend className="bg-emerald-500" label="记住了" n={s.matureWords} />
-          <Legend className="bg-amber-500" label="学习中" n={s.learningWords} />
+          <Legend className="bg-brand-500" label="记住了" n={s.matureWords} />
+          <Legend className="bg-warm-500" label="学习中" n={s.learningWords} />
           <Legend className="bg-[var(--surface-2)]" label="待开始" n={Math.max(0, s.totalWords - s.matureWords - s.learningWords)} />
         </div>
         <p className="mt-3 text-xs dim">
-          今天主动用出 <span className="font-medium text-emerald-600 dark:text-emerald-400">{s.producedToday}</span> 个词。
+          今天主动用出 <span className="font-medium text-brand-600 dark:text-brand-400">{s.producedToday}</span> 个词。
           说出口、写进句子才算会用，认得不算。
         </p>
       </Card>
@@ -180,7 +180,7 @@ export function StatsPage() {
                     </div>
                     <p className="en mt-1.5 text-sm line-through decoration-red-400">{m.wrong}</p>
                     {m.correct && (
-                      <p className="en text-sm text-emerald-600 dark:text-emerald-400">{m.correct}</p>
+                      <p className="en text-sm text-brand-600 dark:text-brand-400">{m.correct}</p>
                     )}
                     {m.note_zh && <p className="mt-1 text-xs dim">{m.note_zh}</p>}
                   </div>

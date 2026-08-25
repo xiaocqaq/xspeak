@@ -64,7 +64,7 @@ export function SpeakingStage({ payload, meta, onDone, onRegenerate, submitting 
                 className={cn(
                   'en inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
                   used
-                    ? 'bg-emerald-500 text-white'
+                    ? 'bg-brand-500 text-white'
                     : 'border border-dashed border-[var(--border)] text-[var(--text-dim)]',
                 )}
               >

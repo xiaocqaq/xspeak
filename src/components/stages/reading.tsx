@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Languages } from 'lucide-react';
 import { Badge, Button, Card, Textarea } from '@/components/ui';
-import { Explain, Speak, StageIntro, TappableText } from './shared';
+import { Explain, Speak, TappableText } from './shared';
 import type { StageProps } from './types';
 import type { ReadingData } from '@/lib/ai/schemas';
 
@@ -19,9 +19,12 @@ export function ReadingStage({ payload, meta, onDone, onRegenerate, submitting }
   const questions = payload.questions ?? [];
 
   return (
-    <div className="space-y-4">
-      <StageIntro>点任意一个词可以直接查，高亮的是今天学的词。</StageIntro>
-
+    <div className="space-y-6">
+      {/*
+        删了「点任意一个词可以直接查」这句操作说明。
+        点词查词是全站一致的交互，在每个阅读页都写一遍是噪音；
+        高亮词本身的形态已经在提示它可点。
+      */}
       <Card>
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -50,7 +53,8 @@ export function ReadingStage({ payload, meta, onDone, onRegenerate, submitting }
         )}
       </Card>
 
-      {payload.glosses.length > 0 && (
+      {/* 可选链兜底：AI 偶尔漏字段，不该让整页白屏 */}
+      {payload.glosses?.length ? (
         <Card>
           <p className="text-sm font-semibold">文中值得留意的表达</p>
           <ul className="mt-3 space-y-3">
@@ -66,7 +70,7 @@ export function ReadingStage({ payload, meta, onDone, onRegenerate, submitting }
             ))}
           </ul>
         </Card>
-      )}
+      ) : null}
 
       {questions.map((q, i) => (
         <Card key={i}>

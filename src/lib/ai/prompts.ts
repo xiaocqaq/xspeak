@@ -248,6 +248,57 @@ export function coachingPrompt(
     .join('\n');
 }
 
+/**
+ * 生成 AI 对话的练习场景。
+ *
+ * 两种入口共用这一个 prompt：
+ * - 换一批：wish 为空，模型自由编，但要避开 avoid 里刚出现过的
+ * - 自定义：wish 是用户原话，必须围绕它展开
+ *
+ * 关键约束是 target_terms —— 它决定了对话里说出口的词能不能计进 produced_count。
+ * 所以宁可挑得少，也不要把场景里根本用不上的词硬塞进去：塞了之后 AI 会生硬地
+ * 往那个词上引，对话立刻失真。
+ */
+export function scenariosPrompt(
+  l: Learner,
+  opts: {
+    count: number;
+    themeZh: string;
+    targetWords: { term: string; meaning_zh: string }[];
+    grammarZh: string | null;
+    /** 用户自己写的话题；空字符串表示「换一批」 */
+    wish: string;
+    /** 已经出过的场景名，避免重复 */
+    avoid: string[];
+  },
+): string {
+  const words = opts.targetWords.length
+    ? opts.targetWords.map((w) => `${w.term}（${w.meaning_zh}）`).join('、')
+    : '（今天没有指定目标词）';
+  return [
+    systemPrompt(l),
+    '',
+    `请为这位学生设计 ${opts.count} 个口语练习场景。`,
+    '',
+    `今天的主题：${opts.themeZh}`,
+    `今天的目标词：${words}`,
+    opts.grammarZh ? `今天的语法点：${opts.grammarZh}` : '',
+    opts.wish
+      ? `学生明确说了想练的话题：「${opts.wish}」—— 所有场景必须围绕这个话题展开，从不同角度切入。`
+      : '学生没指定话题，请根据他的兴趣和今天的主题自由发挥。',
+    opts.avoid.length ? `下面这些场景刚出现过，换其他的：${opts.avoid.join('、')}` : '',
+    '',
+    '要求：',
+    '1. 场景必须是他真实生活里会遇到的，不要课本式对话（不要「在图书馆借书」这种年代感错位的）。',
+    '2. 几个场景之间要真的不一样 —— 不同地点、不同对象、不同目的，不要同一个场景换个说法。',
+    `3. opening_en 要像真人开口，难度贴近 ${l.level}，不要上来就问开放得没边的大问题。`,
+    '4. ai_role 写英文名词短语，包含身份和场合，比如 "a landlord showing an apartment"。',
+    '5. target_terms 只挑这个场景里真的自然用得上的目标词，必须原样抄写。宁可少挑或不挑，不要硬凑。',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function lookupPrompt(l: Learner, term: string, context: string | null): string {
   return [
     `解释这个英文词或短语：${term}`,

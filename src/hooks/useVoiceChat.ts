@@ -18,6 +18,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SAMPLE_RATE, REALTIME_PATH, type Correction, type ServerToClient } from '@/lib/realtime/protocol';
+import { pace } from '@/lib/voice-options';
+import type { SpeechPace } from '@/lib/types';
 
 export type VoiceTurn = {
   /** 本地生成的 id，用于把迟到的纠正对上号 */
@@ -85,6 +87,12 @@ export type StartOpts = {
   targetTerms: string[];
   level: string;
   voice?: string;
+  /**
+   * 语速档位。两条路一起用，因为单独哪条都不够：
+   * - 传给中转层写进 instructions（软控制，不精确但不变调）
+   * - 在本地按 playbackRate 微调播放（精确但会变调，所以只在 0.9~1.1 内动）
+   */
+  paceKey?: SpeechPace;
 };
 
 /* ------------------------------ 音频工具 ------------------------------ */
@@ -198,6 +206,12 @@ export function useVoiceChat() {
     bargeIn: 0,
   });
 
+  /**
+   * 当前的播放倍速。start 时按语速档位写进来。
+   * 放 ref 里是因为 playChunk 每来一片音频就跑一次，走 state 会白白重渲染。
+   */
+  const playbackRateRef = useRef(1);
+
   /** AI 说完后延迟开麦的定时器 */
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
@@ -229,12 +243,17 @@ export function useVoiceChat() {
 
     const src = ctx.createBufferSource();
     src.buffer = buf;
+    // 上游没有语速参数，本地只能靠倍速微调。倍速会连带变调，
+    // 所以档位表里把它限制在 0.9~1.1，再往外调声音就明显发闷或发尖了。
+    const speed = playbackRateRef.current;
+    if (speed !== 1) src.playbackRate.value = speed;
     src.connect(ctx.destination);
 
     // 分片要首尾相接。落后于当前时间就从"现在"重新起排，避免累积漂移。
+    // 注意这里必须按倍速后的实际时长推进游标，否则变速播放时分片会互相叠上。
     const startAt = Math.max(ctx.currentTime + 0.02, playRef.current.cursor);
     src.start(startAt);
-    playRef.current.cursor = startAt + buf.duration;
+    playRef.current.cursor = startAt + buf.duration / speed;
   }, []);
 
   const stopPlayback = useCallback(() => {
@@ -560,6 +579,8 @@ export function useVoiceChat() {
         setStatus('error');
         return;
       }
+      // 倍速要在建连之前设好：第一片音频可能在 start 返回前就到了
+      playbackRateRef.current = pace(opts.paceKey).playbackRate;
       try {
         await connect(opts);
         await startMic();

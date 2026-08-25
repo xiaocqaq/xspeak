@@ -22,6 +22,8 @@ export const STAGE_META: Record<Stage, { zh: string; en: string; minutes: number
   writing: { zh: '写作', en: 'Writing', minutes: 2, icon: 'pen-line' },
 };
 
+export type SpeechPace = 'slow' | 'normal' | 'fast';
+
 export type UserProfile = {
   id: number;
   name: string;
@@ -30,7 +32,11 @@ export type UserProfile = {
   interests: string[];
   daily_minutes: number;
   new_words_per_day: number;
+  /** 浏览器 Web Speech 的语音包名字，给逐句朗读用 */
   voice: string | null;
+  /** StepFun realtime 的音色 id，给畅聊用。和 voice 不通用 */
+  ai_voice: string | null;
+  speech_pace: SpeechPace;
   onboarded: number;
 };
 

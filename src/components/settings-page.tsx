@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Play, Volume2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AudioLines, Gauge, Loader2, Play, Volume2 } from 'lucide-react';
 import { Badge, Button, Card, ErrorNote, Input, Spinner } from '@/components/ui';
 import { apiGet, apiPatch } from '@/lib/fetcher';
 import { useTts } from '@/hooks/useSpeech';
-import type { UserProfile } from '@/lib/types';
+import type { SpeechPace, UserProfile } from '@/lib/types';
+import { AI_VOICES, PACES, PACE_KEYS, pace } from '@/lib/voice-options';
+import { writePace } from '@/lib/pace-store';
 import { cn } from '@/lib/cn';
+
+/** 试听用的句子。短、含常见音、能听出语速差别。 */
+const PREVIEW_TEXT = 'Hi! Nice to meet you. What do you usually do on weekends?';
 
 const LEVELS = [
   { v: 'A1', zh: '入门 · 只认得常见词' },
@@ -31,18 +36,31 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  /** 正在试听的 AI 音色 id，同时充当节流锁 */
+  const [previewing, setPreviewing] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const { speak, voices, supported } = useTts(user?.voice ?? undefined);
 
   const load = () => {
     setError(null);
     apiGet<{ user: UserProfile }>('/api/profile')
-      .then((d) => setUser(d.user))
+      .then((d) => {
+        setUser(d.user);
+        // 数据库是真值，进页面就把本地缓存对齐一次（换设备后第一次打开会用到）
+        writePace(d.user.speech_pace);
+      })
       .catch((e) => setError(e.message));
   };
 
   useEffect(load, []);
 
-  const patch = (p: Partial<UserProfile>) => setUser((u) => (u ? { ...u, ...p } : u));
+  const patch = (p: Partial<UserProfile>) => {
+    // 语速要立刻生效：朗读按钮散在各页，读的是 localStorage 缓存而不是这里的 state。
+    // 不等"保存"再写，否则用户点完档位马上试听，听到的还是旧语速。
+    if (p.speech_pace) writePace(p.speech_pace);
+    setUser((u) => (u ? { ...u, ...p } : u));
+  };
 
   const save = async () => {
     if (!user) return;
@@ -57,6 +75,8 @@ export function SettingsPage() {
         dailyMinutes: user.daily_minutes,
         newWordsPerDay: user.new_words_per_day,
         voice: user.voice,
+        aiVoice: user.ai_voice,
+        speechPace: user.speech_pace,
       });
       setUser(d.user);
       setSaved(true);
@@ -79,6 +99,44 @@ export function SettingsPage() {
     });
 
   const enVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('en'));
+  const paceSpec = pace(user.speech_pace);
+
+  /**
+   * 试听 AI 音色。走服务端的 TTS 代理而不是 realtime —— realtime 连续快速建连
+   * 会被上游限流，用户连点几个音色就会连锁失败。同时这里用 previewing 做单飞锁，
+   * 上一段还没播完就不发新请求。
+   */
+  const previewAiVoice = async (voiceId: string) => {
+    if (previewing) return;
+    setPreviewing(voiceId);
+    setPreviewError(null);
+    audioRef.current?.pause();
+    try {
+      const res = await fetch('/api/voice/preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ voice: voiceId, paceKey: user.speech_pace, text: PREVIEW_TEXT }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => null);
+        throw new Error(j?.error ?? `试听失败（${res.status}）`);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      // 播完再解锁，顺手回收 blob url
+      const done = () => {
+        URL.revokeObjectURL(url);
+        setPreviewing((c) => (c === voiceId ? null : c));
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      await audio.play();
+    } catch (e) {
+      setPreviewError((e as Error).message);
+      setPreviewing(null);
+    }
+  };
 
   return (
     <div className="space-y-4 py-2 fade-up">
@@ -152,8 +210,11 @@ export function SettingsPage() {
       <Card>
         <div className="flex items-center gap-1.5">
           <Volume2 className="size-4 dim" aria-hidden />
-          <h2 className="text-sm font-semibold">朗读声音</h2>
+          <h2 className="text-sm font-semibold">逐句朗读的声音</h2>
         </div>
+        <p className="mt-1.5 text-xs dim">
+          点单词、例句旁边的喇叭时用的声音，走浏览器自带的语音包，和畅聊那套是两回事。
+        </p>
         {!supported ? (
           <p className="mt-2 text-sm dim">这个浏览器不支持语音合成。Chrome、Edge、Safari 都可以。</p>
         ) : enVoices.length === 0 ? (
@@ -165,7 +226,7 @@ export function SettingsPage() {
                 name={null}
                 active={!user.voice}
                 onPick={() => patch({ voice: null })}
-                onPlay={() => speak('Nice to meet you. What do you usually do on weekends?')}
+                onPlay={() => speak(PREVIEW_TEXT, { rate: paceSpec.webSpeechRate })}
               />
               {enVoices.map((v) => (
                 <VoiceRow
@@ -175,13 +236,97 @@ export function SettingsPage() {
                   local={v.localService}
                   active={user.voice === v.name}
                   onPick={() => patch({ voice: v.name })}
-                  onPlay={() => speak('Nice to meet you. What do you usually do on weekends?', { voice: v })}
+                  onPlay={() => speak(PREVIEW_TEXT, { voice: v, rate: paceSpec.webSpeechRate })}
                 />
               ))}
             </div>
             <p className="mt-2.5 text-xs dim">本地语音离线可用，云端语音音质更好但要联网。</p>
           </>
         )}
+      </Card>
+
+      <Card>
+        <div className="flex items-center gap-1.5">
+          <Gauge className="size-4 dim" aria-hidden />
+          <h2 className="text-sm font-semibold">说话速度</h2>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {PACE_KEYS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => patch({ speech_pace: k as SpeechPace })}
+              aria-pressed={user.speech_pace === k}
+              className={cn(
+                'touch-manipulation rounded-xl border px-3 py-2.5 text-center transition-colors active:translate-y-px',
+                user.speech_pace === k
+                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-100'
+                  : 'border-[var(--border)] hover:bg-[var(--surface-2)]',
+              )}
+            >
+              <span className="block text-sm font-medium">{PACES[k].zh}</span>
+              <span className="block text-[11px] opacity-70">{PACES[k].hint}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-2.5 text-xs leading-relaxed dim">
+          逐句朗读是精确按这个速度念的。畅聊模式只能做到近似 —— 语音模型没有语速参数，
+          我们一边要求它慢点说、一边微调播放倍速，所以每次快慢会略有出入。
+        </p>
+      </Card>
+
+      <Card>
+        <div className="flex items-center gap-1.5">
+          <AudioLines className="size-4 dim" aria-hidden />
+          <h2 className="text-sm font-semibold">畅聊时 AI 的声音</h2>
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed dim">
+          这些是中文音色在说英文，口音会偏中式 —— 上游的英文音色不支持实时对话，暂时只能这样。
+          挑一个你听着舒服的就行。
+        </p>
+        {previewError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{previewError}</p>}
+        <div className="mt-3 space-y-1.5">
+          {AI_VOICES.map((v, i) => (
+            <div
+              key={v.id}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border px-3 py-2',
+                (user.ai_voice ?? AI_VOICES[0].id) === v.id
+                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30'
+                  : 'border-[var(--border)]',
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => patch({ ai_voice: v.id })}
+                aria-pressed={(user.ai_voice ?? AI_VOICES[0].id) === v.id}
+                className="min-w-0 flex-1 text-left"
+              >
+                <span className="block truncate text-sm">
+                  {v.zh}
+                  {i === 0 && !user.ai_voice && <span className="ml-1.5 text-[11px] dim">当前</span>}
+                </span>
+                <span className="text-[11px] dim">{v.hint}</span>
+              </button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void previewAiVoice(v.id)}
+                disabled={Boolean(previewing)}
+                aria-label={`试听${v.zh}`}
+              >
+                {previewing === v.id ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <Play className="size-4" aria-hidden />
+                )}
+              </Button>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2.5 text-xs dim">
+          试听按当前语速档位（{paceSpec.zh}）合成，每次只播一条。
+        </p>
       </Card>
 
       <div className="sticky bottom-20 z-10 flex items-center gap-3 sm:bottom-4">

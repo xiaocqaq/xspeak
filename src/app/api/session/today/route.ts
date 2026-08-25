@@ -56,6 +56,8 @@ export async function GET() {
         newWordsPerDay: user.new_words_per_day,
         onboarded: Boolean(user.onboarded),
         voice: user.voice,
+        aiVoice: user.ai_voice,
+        speechPace: user.speech_pace,
       },
     };
   });

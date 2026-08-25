@@ -21,6 +21,7 @@ import {
   ASR_MODEL,
   buildInstructions,
 } from './protocol.mjs';
+import { AI_VOICE_IDS, pace } from '../voice-options.mjs';
 
 const UPSTREAM_BASE =
   process.env.STEP_REALTIME_URL?.trim() || 'wss://api.stepfun.com/step_plan/v1/realtime';
@@ -134,8 +135,11 @@ export function attachRelay(wss, opts) {
                   aiRole: msg.aiRole,
                   targetTerms: msg.targetTerms ?? [],
                   level: msg.level ?? 'A1',
+                  paceInstruction: pace(msg.paceKey).instruction,
                 }),
-                voice: msg.voice || DEFAULT_VOICE,
+                // 音色过白名单：不认的 id 上游会直接报错并断开整条会话，
+                // 与其让一次手改配置毁掉通话，不如静默回落到默认音色。
+                voice: AI_VOICE_IDS.includes(msg.voice) ? msg.voice : DEFAULT_VOICE,
                 ...UPSTREAM_AUDIO,
                 // 必须显式要求转写，否则拿不到学生说了什么。
                 // 注意：加上 turn_detection: server_vad 会让服务端丢掉这个配置。

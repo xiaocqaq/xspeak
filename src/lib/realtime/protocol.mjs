@@ -56,11 +56,14 @@ export const UPSTREAM_AUDIO = {
  * 关键一条是明确禁止 AI 纠错 —— 纠正由旁路的文本分析负责。畅聊模式的价值就在
  * 「不被打断地把话说完」，如果语音这条线也开始挑错，两件事会互相削弱。
  */
-export function buildInstructions({ aiRole, targetTerms, level }) {
+export function buildInstructions({ aiRole, targetTerms, level, paceInstruction }) {
   const lines = [
     `You are ${aiRole}. You are helping a Chinese learner practice spoken English.`,
     `Their level is ${level}, so keep your sentences short and your vocabulary simple.`,
     'Reply in English only, one or two sentences at a time, then let them speak.',
+    // 语速只能这样软控制：realtime 完全没有语速参数（实测见 voice-options.mjs 头注释），
+    // 模型基本会听，但不精确、每回合不完全一致。
+    paceInstruction || 'Speak at a calm, clear pace, a little slower than a native speaker would.',
     'Sound like a real person in a real conversation: react to what they said, ask follow-up questions.',
     // 畅聊模式不打断
     'Do NOT correct their grammar or pronunciation, and do not comment on their mistakes.',

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Badge, Button, Card, Progress, Textarea } from '@/components/ui';
-import { Choices, Explain, Speak, StageIntro, TappableText } from './shared';
+import { Choices, Explain, Speak, TappableText } from './shared';
 import type { StageProps, ReviewBody } from './types';
 import type { GrammarData } from '@/lib/ai/schemas';
 
@@ -32,9 +32,8 @@ export function GrammarStage({ payload, onDone, onRegenerate, submitting }: Stag
 
   if (phase === 'lesson') {
     return (
-      <div className="space-y-4">
-        {payload.focus_zh && <StageIntro>{payload.focus_zh}</StageIntro>}
-
+      <div className="space-y-6">
+        {/* focus_zh（AI 写的一整段「为什么今天讲这个」）删了，语法点本身就是主角 */}
         <Card>
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -48,7 +47,8 @@ export function GrammarStage({ payload, onDone, onRegenerate, submitting }: Stag
             <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed">{payload.mini_lesson_zh}</div>
           )}
 
-          {payload.examples.length > 0 && (
+          {/* 可选链兜底：AI 偶尔漏字段，不该让整页白屏 */}
+          {payload.examples?.length ? (
             <div className="mt-4 space-y-2">
               {payload.examples.map((ex, i) => (
                 <div key={i} className="rounded-xl bg-[var(--surface-2)] p-3">
@@ -60,12 +60,12 @@ export function GrammarStage({ payload, onDone, onRegenerate, submitting }: Stag
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
 
           {point?.pitfalls && point.pitfalls.length > 0 && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-900/25">
+            <div className="mt-4 rounded-xl border border-warm-200 bg-warm-50 p-3 dark:border-warm-900 dark:bg-warm-900/25">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="size-4 text-amber-500" aria-hidden />
+                <AlertTriangle className="size-4 text-warm-500" aria-hidden />
                 <p className="text-sm font-semibold">中文母语者最容易错的地方</p>
               </div>
               <ul className="mt-2 space-y-1">

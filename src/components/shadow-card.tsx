@@ -99,7 +99,7 @@ export function ShadowCard({
           在听… <span className="en">{stt.interim}</span>
         </p>
       )}
-      {stt.error && <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">{stt.error}</p>}
+      {stt.error && <p className="mt-2 text-xs text-warm-600 dark:text-warm-400">{stt.error}</p>}
       {err && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{err}</p>}
 
       {manual && (
@@ -129,7 +129,7 @@ export function ShadowCard({
             <div
               className={cn(
                 'grid size-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white',
-                result.score >= 85 ? 'bg-emerald-500' : result.score >= 65 ? 'bg-amber-500' : 'bg-red-500',
+                result.score >= 85 ? 'bg-brand-500' : result.score >= 65 ? 'bg-warm-500' : 'bg-red-500',
               )}
             >
               {result.score}
@@ -142,8 +142,8 @@ export function ShadowCard({
                 key={i}
                 className={cn(
                   'en rounded px-1 text-sm',
-                  w.status === 'ok' && 'text-emerald-600 dark:text-emerald-400',
-                  w.status === 'close' && 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+                  w.status === 'ok' && 'text-brand-600 dark:text-brand-400',
+                  w.status === 'close' && 'bg-warm-100 text-warm-800 dark:bg-warm-900/40 dark:text-warm-200',
                   w.status === 'miss' && 'bg-red-100 text-red-800 line-through dark:bg-red-900/40 dark:text-red-200',
                 )}
                 title={

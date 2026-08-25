@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Badge, Button, Card, ErrorNote, Progress, Spinner } from '@/components/ui';
+import { DayBars } from '@/components/charts';
 import { apiGet } from '@/lib/fetcher';
 import { STAGE_META, STAGES, type Stage, type StatsSummary } from '@/lib/types';
 import { cn } from '@/lib/cn';
@@ -161,7 +162,7 @@ export function Dashboard() {
                     className={cn(
                       'grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold',
                       isDone
-                        ? 'bg-emerald-500 text-white'
+                        ? 'bg-brand-500 text-white'
                         : isNext
                           ? 'bg-brand-600 text-white'
                           : 'bg-[var(--surface-2)] text-[var(--text-dim)]',
@@ -241,9 +242,9 @@ export function Dashboard() {
       )}
 
       {stats.openMistakes > 0 && (
-        <Card className="border-amber-200 dark:border-amber-900/60">
+        <Card className="border-warm-200 dark:border-warm-900/60">
           <div className="flex items-start gap-3">
-            <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-500" aria-hidden />
+            <AlertCircle className="mt-0.5 size-5 shrink-0 text-warm-500" aria-hidden />
             <div>
               <h3 className="text-sm font-semibold">有 {stats.openMistakes} 个错误还没消掉</h3>
               <p className="mt-1 text-sm dim">
@@ -262,7 +263,16 @@ export function Dashboard() {
           <Clock className="size-4 dim" aria-hidden />
           <h3 className="text-sm font-semibold">最近两周</h3>
         </div>
-        <MiniBars data={stats.last14} />
+        <DayBars
+          className="mt-3"
+          height={64}
+          ariaLabel="最近 14 天每天的复习次数"
+          data={stats.last14.map((x) => ({
+            day: x.day,
+            value: x.reviews,
+            tip: `${x.reviews} 次 · ${Math.round(x.minutes)} 分`,
+          }))}
+        />
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs dim">
           <span>已掌握 {stats.matureWords} 词</span>
           <span>学习中 {stats.learningWords} 词</span>
@@ -279,26 +289,6 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl bg-[var(--surface-2)] px-3 py-2">
       <p className="text-xs dim">{label}</p>
       <p className="mt-0.5 font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function MiniBars({ data }: { data: StatsSummary['last14'] }) {
-  const max = Math.max(1, ...data.map((d) => d.reviews));
-  return (
-    <div className="mt-3 flex h-16 items-end gap-1" role="img" aria-label="最近 14 天复习量">
-      {data.map((d) => (
-        <div key={d.day} className="group relative flex-1">
-          <div
-            className={cn(
-              'w-full rounded-t-sm transition-colors',
-              d.reviews > 0 ? 'bg-brand-400 group-hover:bg-brand-600' : 'bg-[var(--surface-2)]',
-            )}
-            style={{ height: `${Math.max(3, (d.reviews / max) * 64)}px` }}
-            title={`${d.day.slice(5)}：复习 ${d.reviews} 次 · ${Math.round(d.minutes)} 分钟`}
-          />
-        </div>
-      ))}
     </div>
   );
 }

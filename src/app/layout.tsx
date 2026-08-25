@@ -5,11 +5,11 @@ import { TopBar } from '@/components/topbar';
 import { SwRegister } from '@/components/sw-register';
 
 export const metadata: Metadata = {
-  title: { default: '林习英语', template: '%s · 林习英语' },
+  title: { default: 'XLearn', template: '%s · XLearn' },
   description: '每天 30 分钟，AI 陪你把英语真正用出来：单词、语法、听力、口语、写作批改一条线走完。',
-  applicationName: '林习英语',
+  applicationName: 'XLearn',
   manifest: '/manifest.webmanifest',
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: '林习英语' },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'XLearn' },
   icons: {
     icon: [
       { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -26,8 +26,8 @@ export const viewport: Viewport = {
   maximumScale: 5,
   themeColor: [
     // 和 globals.css 的 --bg 保持一致，否则 PWA 状态栏会和页面顶端割裂
-    { media: '(prefers-color-scheme: light)', color: '#faf8f5' },
-    { media: '(prefers-color-scheme: dark)', color: '#16130f' },
+    { media: '(prefers-color-scheme: light)', color: '#f2f2f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#000000' },
   ],
 };
 
@@ -36,7 +36,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body className="min-h-dvh antialiased">
         <SwRegister />
-        <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-4 pb-24 pt-4 sm:pb-8">
+        {/* 容器内边距对齐 8pt 网格；底部给导航留 96px */}
+        <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col px-4 pb-24 pt-6 sm:pb-8">
           <TopBar />
           <main className="flex-1">{children}</main>
         </div>

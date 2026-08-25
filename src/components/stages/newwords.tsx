@@ -57,9 +57,11 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
   };
 
   return (
-    <div className="space-y-4">
-      <StageIntro>{payload.intro_zh}</StageIntro>
-
+    <div className="space-y-6">
+      {/*
+        payload.intro_zh（AI 写的一整段「今天为什么选这些词」）删了。
+        学新词页的主体是词本身，上面堆三四行教学说明只会把卡片挤到屏幕外。
+      */}
       <div className="flex items-center gap-3">
         <Progress value={((idx + (isRevealed ? 1 : 0)) / words.length) * 100} className="flex-1" />
         <span className="text-xs dim">
@@ -108,8 +110,8 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
             )}
 
             {w.memory_hook_zh && (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-900/25">
-                <Lightbulb className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden />
+              <div className="flex items-start gap-2 rounded-xl border border-warm-200 bg-warm-50 p-3 dark:border-warm-900 dark:bg-warm-900/25">
+                <Lightbulb className="mt-0.5 size-4 shrink-0 text-warm-500" aria-hidden />
                 <p className="text-sm">{w.memory_hook_zh}</p>
               </div>
             )}

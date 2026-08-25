@@ -126,10 +126,15 @@ export function VocabPage() {
           <ul className="space-y-2">
             {items.map((it) => (
               <li key={it.id}>
+                {/*
+                  一条词卡分三层：认读（词形/音标/状态）→ 释义例句 → 进度和操作。
+                  操作图标刻意不再竖排成一列 —— 那样每条卡片都被撑到三个图标的高度，
+                  而这些操作（重置、移除）一年用不到几次，不该占据和内容同等的版面。
+                */}
                 <Card className="p-4">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                         <button
                           type="button"
                           onClick={() => setLookup(it.term)}
@@ -141,66 +146,66 @@ export function VocabPage() {
                         {it.phonetic && <span className="en text-xs dim">{it.phonetic}</span>}
                         <StateBadge item={it} />
                       </div>
-                      <p className="mt-0.5 truncate text-sm">{it.meaning_zh}</p>
+                      <p className="mt-1 truncate text-sm">{it.meaning_zh}</p>
                       {it.example_en && (
                         <p className="en mt-1 truncate text-xs dim">{it.example_en}</p>
                       )}
-                      {it.progress && (
-                        <p className="mt-1.5 flex flex-wrap gap-x-3 text-[11px] dim">
-                          <span>复习 {it.progress.reps} 次</span>
-                          <span
-                            className={cn(
-                              it.progress.produced_count > 0 && 'text-emerald-600 dark:text-emerald-400',
-                            )}
-                          >
-                            用出 {it.progress.produced_count} 次
-                          </span>
-                          {it.progress.lapses > 0 && <span>忘过 {it.progress.lapses} 次</span>}
-                          <span>下次 {it.progress.due.slice(5, 10)}</span>
-                        </p>
-                      )}
                     </div>
 
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button
-                        type="button"
-                        onClick={() => act('star', it.id)}
-                        aria-label={it.progress?.starred ? '取消标星' : '标星'}
-                        className="rounded-lg p-1.5 hover:bg-[var(--surface-2)]"
-                      >
-                        <Star
-                          className={cn(
-                            'size-4',
-                            it.progress?.starred
-                              ? 'fill-amber-400 text-amber-400'
-                              : 'text-[var(--text-dim)]',
-                          )}
-                          aria-hidden
-                        />
-                      </button>
-                      {it.progress && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => act('reset', it.id)}
-                            aria-label="重置进度"
-                            title="从头开始学这个词"
-                            className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
-                          >
-                            <RotateCcw className="size-4" aria-hidden />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => act('remove', it.id)}
-                            aria-label="从生词本移除"
-                            className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"
-                          >
-                            <Trash2 className="size-4" aria-hidden />
-                          </button>
-                        </>
-                      )}
-                    </div>
+                    {/* 标星是这个词的属性，不是一次性动作，所以放在最显眼的右上角 */}
+                    <button
+                      type="button"
+                      onClick={() => act('star', it.id)}
+                      aria-label={it.progress?.starred ? '取消标星' : '标星'}
+                      className="-mr-1 -mt-1 shrink-0 rounded-lg p-2 hover:bg-[var(--surface-2)]"
+                    >
+                      <Star
+                        className={cn(
+                          'size-4',
+                          it.progress?.starred
+                            ? 'fill-warm-300 text-warm-500'
+                            : 'text-[var(--text-dim)]',
+                        )}
+                        aria-hidden
+                      />
+                    </button>
                   </div>
+
+                  {it.progress && (
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-[var(--hairline)] pt-2">
+                      <p className="flex min-w-0 flex-wrap gap-x-3 text-[11px] dim">
+                        <span>复习 {it.progress.reps} 次</span>
+                        <span
+                          className={cn(
+                            it.progress.produced_count > 0 && 'font-medium text-brand-600 dark:text-brand-300',
+                          )}
+                        >
+                          用出 {it.progress.produced_count} 次
+                        </span>
+                        {it.progress.lapses > 0 && <span>忘过 {it.progress.lapses} 次</span>}
+                        <span>下次 {it.progress.due.slice(5, 10)}</span>
+                      </p>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => act('reset', it.id)}
+                          aria-label="重置进度"
+                          title="从头开始学这个词"
+                          className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                        >
+                          <RotateCcw className="size-3.5" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => act('remove', it.id)}
+                          aria-label="从生词本移除"
+                          className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+                        >
+                          <Trash2 className="size-3.5" aria-hidden />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </Card>
               </li>
             ))}

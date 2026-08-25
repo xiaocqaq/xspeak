@@ -17,9 +17,9 @@ export function TopBar() {
   if (pathname?.startsWith('/onboarding') || pathname?.startsWith('/learn')) return null;
 
   return (
-    <div className="mb-2 flex items-center justify-between gap-2">
-      <Link href="/" className="text-sm font-semibold tracking-tight">
-        林习<span className="text-brand-600 dark:text-brand-300">英语</span>
+    <div className="mb-4 flex items-center justify-between gap-2">
+      <Link href="/" className="text-base font-semibold tracking-[-0.022em]">
+        X<span className="text-brand-500 dark:text-brand-600">Learn</span>
       </Link>
       <nav className="flex items-center gap-1" aria-label="次级导航">
         {ITEMS.map(({ href, label, Icon }) => {
@@ -30,13 +30,14 @@ export function TopBar() {
               href={href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                'inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium',
+                'transition-colors duration-300 [transition-timing-function:var(--ease-standard)]',
                 active
-                  ? 'bg-[var(--surface-2)] text-brand-600 dark:text-brand-300'
+                  ? 'bg-[var(--surface-2)] text-brand-500 dark:text-brand-600'
                   : 'text-[var(--text-dim)] hover:bg-[var(--surface-2)]',
               )}
             >
-              <Icon className="size-3.5" aria-hidden />
+              <Icon className="size-4" aria-hidden />
               {label}
             </Link>
           );
