@@ -67,7 +67,13 @@ await step('服务在跑', async () => {
 const today = await step('GET /api/session/today', async () => {
   const d = await call('GET', '/api/session/today');
   assert(d.session?.id, '没有返回 session');
-  assert(Array.isArray(d.session.stages) && d.session.stages.length === 7, '环节数不是 7');
+  // 写死数字不如写死清单：数字对不上只知道"少了一个"，清单对不上能直接看出少了哪个。
+  // 写作环节已经去掉了，所以是 6 个不是 7 个。
+  const want = ['warmup', 'newwords', 'grammar', 'listening', 'reading', 'speaking'];
+  assert(
+    Array.isArray(d.session.stages) && d.session.stages.join(',') === want.join(','),
+    `环节不对：期望 ${want.join('/')}，实际 ${d.session?.stages?.join('/')}`,
+  );
   assert(d.stats, '没有返回 stats');
   console.log(
     `\n    主题「${d.themeZh ?? d.session.themeZh}」· 新词 ${d.targetWords.length} · 待复习 ${d.reviewWords.length}`,
@@ -172,7 +178,7 @@ await step('GET /api/stats（统计）', async () => {
 /* ------------------------------ 需要真实 AI ------------------------------ */
 
 if (!FAST) {
-  const STAGES = ['warmup', 'newwords', 'grammar', 'listening', 'reading', 'speaking', 'writing'];
+  const STAGES = ['warmup', 'newwords', 'grammar', 'listening', 'reading', 'speaking'];
   const payloads = {};
 
   for (const stage of STAGES) {
@@ -204,10 +210,6 @@ if (!FAST) {
       if (stage === 'speaking') {
         assert(p.opening_en, '没有开场句');
         assert(p.useful_phrases?.length >= 3, '可用句型不够');
-      }
-      if (stage === 'writing') {
-        assert(p.prompt_en, '没有写作题目');
-        assert(Array.isArray(p.must_use), '没有必用词');
       }
       if (stage === 'warmup') {
         assert(Array.isArray(p.items), 'warmup items 不是数组');
@@ -316,25 +318,6 @@ if (!FAST) {
       sessionId: today?.session?.id,
     });
     assert(d.scored.score < 70, `念错了还给 ${d.scored.score} 分，太宽松`);
-  });
-
-  await step('POST /api/writing（写作批改）', async () => {
-    const w = payloads.writing?.payload;
-    const d = await call('POST', '/api/writing', {
-      sessionId: today?.session?.id,
-      promptEn: w?.prompt_en ?? 'Describe your morning.',
-      promptZh: w?.prompt_zh ?? '描述你的早晨',
-      // 故意写几个中国学生常犯的错，看 AI 能不能挑出来
-      text: 'I very like coffee. Yesterday I go to a cafe and drink two cup of coffee with my friend.',
-      mustUse: w?.must_use ?? [],
-      targetWordIds: (payloads.newwords?.payload?.words ?? []).map((x) => x.id),
-    });
-    assert(typeof d.score === 'number', '没返回分数');
-    assert(d.issues?.length > 0, '这么明显的错误竟然没挑出问题');
-    // issues[].wrong 必须是原文的子串，前端靠这个定位高亮
-    const text = 'I very like coffee. Yesterday I go to a cafe and drink two cup of coffee with my friend.';
-    const bad = d.issues.filter((i) => !text.includes(i.wrong));
-    assert(bad.length === 0, `有 ${bad.length} 处 wrong 不是原文子串，前端高亮会错位：${bad.map((b) => b.wrong).join(' / ')}`);
   });
 
   const conv = await step('POST /api/chat（开一段对话）', async () => {

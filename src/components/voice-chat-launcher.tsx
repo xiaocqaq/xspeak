@@ -57,7 +57,12 @@ export function VoiceChatLauncher({ start, onHangUp }: { start: StartConfig; onH
   }, [start]);
 
   if (error) return <ErrorNote message={error} />;
-  if (!ready) return <div className="py-10"><Spinner label="正在接通" /></div>;
+  if (!ready)
+    return (
+      <div className="flex min-h-[40dvh] items-center justify-center">
+        <Spinner label="正在接通" />
+      </div>
+    );
 
   return (
     <VoiceChatPanel

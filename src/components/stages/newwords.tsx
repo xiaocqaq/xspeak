@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Lightbulb } from 'lucide-react';
 import { Badge, Button, Card, Progress } from '@/components/ui';
-import { Speak, StageIntro, TappableText } from './shared';
+import { ColumnLabel, Speak, Split, StageIntro, StickyColumn, TappableText } from './shared';
 import type { StageProps } from './types';
 import { cn } from '@/lib/cn';
 
@@ -57,11 +57,46 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
   };
 
   return (
-    <div className="space-y-6">
-      {/*
-        payload.intro_zh（AI 写的一整段「今天为什么选这些词」）删了。
-        学新词页的主体是词本身，上面堆三四行教学说明只会把卡片挤到屏幕外。
-      */}
+    /*
+      payload.intro_zh（AI 写的一整段「今天为什么选这些词」）删了。
+      学新词页的主体是词本身，上面堆三四行教学说明只会把卡片挤到屏幕外。
+
+      词卡是主角，所以用 wide-main：右边只留一条窄栏放今天这批词的索引。
+      原来它横着躺在按钮下面，宽屏上词卡右边那一大片是空的。
+    */
+    <Split
+      ratio="wide-main"
+      aside={
+        <StickyColumn>
+          <ColumnLabel>今天这批（{words.length}）</ColumnLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {words.map((x, i) => (
+              <button
+                key={x.term}
+                type="button"
+                onClick={() => setIdx(i)}
+                className={cn(
+                  // 三态：当前是实心，翻过的是描边实底，没翻的是虚线框
+                  'en rounded-[4px] border px-2 py-1 text-xs transition-colors duration-200',
+                  '[transition-timing-function:var(--ease-standard)]',
+                  i === idx
+                    ? 'border-[var(--accent-bar)] bg-[var(--accent-bar)] font-semibold text-white'
+                    : revealed.has(i)
+                      ? 'border-[var(--hairline)] bg-[var(--bg-sidebar)] text-[var(--text-secondary)]'
+                      : 'border-dashed border-[var(--border)] text-[var(--text-faint)]',
+                )}
+              >
+                {x.term}
+              </button>
+            ))}
+          </div>
+
+          <button type="button" onClick={onRegenerate} className="w-full text-center text-xs dim hover:underline">
+            换一批词
+          </button>
+        </StickyColumn>
+      }
+    >
       <div className="flex items-center gap-3">
         <Progress value={((idx + (isRevealed ? 1 : 0)) / words.length) * 100} className="flex-1" />
         <span className="text-xs dim">
@@ -73,7 +108,7 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="en text-3xl font-semibold">{w.term}</h2>
+              <h2 className="en serif text-[34px] font-bold leading-tight text-[var(--text-title)]">{w.term}</h2>
               <Speak text={w.term} />
               <Speak text={w.term} slow label="慢速朗读" />
             </div>
@@ -95,35 +130,35 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
         ) : (
           <div className="mt-5 space-y-4 fade-up">
             <div>
-              <p className="text-lg font-medium">{w.meaning_zh}</p>
+              <p className="text-[17px] font-semibold text-[var(--text-title)]">{w.meaning_zh}</p>
               {w.meaning_en && <p className="en mt-0.5 text-sm dim">{w.meaning_en}</p>}
             </div>
 
             {w.example_en && (
-              <div className="rounded-xl bg-[var(--surface-2)] p-3">
+              <div className="rounded-lg border border-[var(--hairline)] bg-[var(--bg-sidebar)] p-3">
                 <div className="flex items-start gap-2">
                   <TappableText text={w.example_en} highlight={[w.term]} className="flex-1 text-sm" />
                   <Speak text={w.example_en} />
                 </div>
-                <p className="mt-1 text-xs dim">{w.example_zh}</p>
+                <p className="mt-1.5 text-xs dim">{w.example_zh}</p>
               </div>
             )}
 
             {w.memory_hook_zh && (
-              <div className="flex items-start gap-2 rounded-xl border border-warm-200 bg-warm-50 p-3 dark:border-warm-900 dark:bg-warm-900/25">
+              <div className="flex items-start gap-2 rounded-lg border border-warm-200 bg-warm-50 p-3 dark:border-warm-800 dark:bg-warm-900/25">
                 <Lightbulb className="mt-0.5 size-4 shrink-0 text-warm-500" aria-hidden />
-                <p className="text-sm">{w.memory_hook_zh}</p>
+                <p className="text-sm leading-relaxed text-[var(--text-body)]">{w.memory_hook_zh}</p>
               </div>
             )}
 
             {w.collocations.length > 0 && (
               <div>
-                <p className="text-xs font-semibold dim">常用搭配</p>
+                <p className="section-label">常用搭配</p>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {w.collocations.map((c) => (
                     <span
                       key={c}
-                      className="en inline-flex items-center gap-1 rounded-md bg-[var(--surface-2)] px-2 py-1 text-xs"
+                      className="en inline-flex items-center gap-1 rounded-[4px] border border-[var(--hairline)] bg-[var(--bg-sidebar)] px-2 py-1 text-xs text-[var(--text-body)]"
                     >
                       {c}
                       <Speak text={c} className="p-0.5" />
@@ -154,30 +189,6 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
           {isRevealed && !last && <ChevronRight className="size-4" aria-hidden />}
         </Button>
       </div>
-
-      <div className="flex flex-wrap gap-1.5">
-        {words.map((x, i) => (
-          <button
-            key={x.term}
-            type="button"
-            onClick={() => setIdx(i)}
-            className={cn(
-              'en rounded-md px-2 py-1 text-xs transition-colors',
-              i === idx
-                ? 'bg-brand-600 text-white'
-                : revealed.has(i)
-                  ? 'bg-[var(--surface-2)] text-[var(--text-dim)]'
-                  : 'border border-dashed border-[var(--border)] text-[var(--text-dim)]',
-            )}
-          >
-            {x.term}
-          </button>
-        ))}
-      </div>
-
-      <button type="button" onClick={onRegenerate} className="w-full text-center text-xs dim hover:underline">
-        换一批词
-      </button>
-    </div>
+    </Split>
   );
 }

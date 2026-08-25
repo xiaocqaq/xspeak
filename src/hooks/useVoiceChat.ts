@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SAMPLE_RATE, REALTIME_PATH, type Correction, type ServerToClient } from '@/lib/realtime/protocol';
+import { withBase } from '@/lib/base-path';
 import { pace } from '@/lib/voice-options';
 import type { SpeechPace } from '@/lib/types';
 
@@ -458,7 +459,8 @@ export function useVoiceChat() {
         }
 
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-        const ws = new WebSocket(`${proto}://${location.host}${REALTIME_PATH}`);
+        // 子路径部署时中转层挂在 <前缀>/api/realtime 上，这里跟着补前缀
+        const ws = new WebSocket(`${proto}://${location.host}${withBase(REALTIME_PATH)}`);
         wsRef.current = ws;
 
         ws.onopen = () => {

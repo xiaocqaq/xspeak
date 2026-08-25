@@ -16,8 +16,14 @@ const StartBody = z.object({
   sessionId: z.number().int().positive().nullish(),
   title: z.string().max(80).default('自由对话'),
   themeSlug: z.string().max(60).nullish(),
-  scenarioZh: z.string().max(500).default('自由聊天，话题由你决定。'),
-  aiRole: z.string().max(120).default('a friendly English tutor'),
+  /*
+   * 上限放到 2000：这个字段不是用户手输的，是口语环节生成出来的场景说明，
+   * 生成 schema（SpeakingPayload.scenario_zh）本身没有长度约束，模型写得稍长
+   * 就会被自己的接口 400 掉 —— 线上就出过 "scenarioZh Too big" 。
+   * 这里只是防呆（它最终会拼进 system prompt），不是业务规则。
+   */
+  scenarioZh: z.string().max(2000).default('自由聊天，话题由你决定。'),
+  aiRole: z.string().max(200).default('a friendly English tutor'),
   openingEn: z.string().max(500).nullish(),
   openingZh: z.string().max(500).nullish(),
   targetWordIds: z.array(z.number().int().positive()).default([]),
@@ -112,6 +118,8 @@ export async function POST(req: Request) {
       maxTokens: 2000,
       temperature: 0.85,
       toolName: 'emit_chat_reply',
+      // 对话要跟得上人说话的节奏，用 chat 角色的模型（可以单独配一个更快的）
+      role: 'chat',
     });
 
     await run(

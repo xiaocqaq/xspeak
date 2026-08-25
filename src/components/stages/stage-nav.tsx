@@ -1,12 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Check, Flame, Headphones, PenLine, Mic, Ruler, Sparkles, X, BookOpen } from 'lucide-react';
+import Link from 'next/link';
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  Flame,
+  Headphones,
+  Mic,
+  Ruler,
+  Sparkles,
+} from 'lucide-react';
+import { SidebarDrawer, SidebarFrame, SidebarGroup } from '@/components/shell/sidebar-frame';
 import { STAGES, STAGE_META, type Stage } from '@/lib/types';
 import { cn } from '@/lib/cn';
 
 /**
- * 七个环节的导航。
+ * 六个环节的导航。
  *
  * 宽屏是常驻侧栏，手机是从左侧滑出的抽屉 —— 375px 宽放不下侧栏，
  * 硬塞会把答题区压到没法读。两种形态共用同一份列表渲染，
@@ -23,7 +33,6 @@ const ICONS: Record<Stage, typeof Flame> = {
   listening: Headphones,
   reading: BookOpen,
   speaking: Mic,
-  writing: PenLine,
 };
 
 function StageList({
@@ -48,22 +57,23 @@ function StageList({
               onClick={() => onPick(s)}
               aria-current={isCurrent ? 'step' : undefined}
               className={cn(
-                'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left',
-                'transition-colors duration-300 [transition-timing-function:var(--ease-standard)]',
+                'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left',
+                'transition-colors duration-150',
                 isCurrent
-                  ? 'bg-brand-500/12 text-brand-700 dark:text-brand-300'
-                  : 'text-[var(--text)] hover:bg-[var(--surface-2)]',
+                  ? 'bg-[var(--surface-active)] font-semibold text-brand-600'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
               )}
             >
               {/* 序号位在“已完成”时换成勾，不额外占一列 */}
               <span
                 className={cn(
-                  'grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold',
+                  // 序号章是方角小牌（圆形实心块站里只留给通话按钮），没走到的空心
+                  'grid size-[22px] shrink-0 place-items-center rounded-md text-[11px] font-semibold tabular-nums',
                   isDone
-                    ? 'bg-[var(--success)] text-white'
+                    ? 'bg-[var(--accent-bar)] text-white'
                     : isCurrent
-                      ? 'bg-brand-500 text-white dark:bg-brand-600'
-                      : 'bg-[var(--surface-2)] text-[var(--text-dim)]',
+                      ? 'bg-brand-600 text-white'
+                      : 'border border-[var(--border)] bg-[var(--bg-sidebar)] text-[var(--text-faint)]',
                 )}
               >
                 {isDone ? <Check className="size-3.5" aria-hidden /> : i + 1}
@@ -82,24 +92,33 @@ function StageList({
 }
 
 /**
- * 宽屏常驻侧栏。手机上整个隐藏。
+ * 宽屏常驻侧栏。
  *
- * 宽度取 12rem（192px）而不更宽：站内容器是 48rem，
- * 侧栏 12rem + 间距 2rem + 答题区 34rem 刚好塞得下，
- * 不必为了它去拉宽全站布局。
+ * 用和全站导航同一个 SidebarFrame，所以从首页进到学习里，视觉上是
+ * "同一条侧栏换了内容"（导航 → 六个环节），而不是两条不同的侧栏各占一边。
+ * AppShell 在 /learn 下不渲染全站侧栏，位置留给这一条。
  */
 export function StageSidebar(props: { current: Stage; done: Stage[]; onPick: (s: Stage) => void }) {
   return (
-    <nav className="hidden w-48 shrink-0 md:block" aria-label="学习环节">
-      <div className="sticky top-6">
-        <p className="mb-3 px-3 text-[13px] font-semibold dim">今天这样走</p>
+    <SidebarFrame label="学习环节">
+      <SidebarGroup title="今天这样走">
         <StageList {...props} />
-      </div>
-    </nav>
+      </SidebarGroup>
+      <Link
+        href="/"
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-[13px]',
+          'text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
+        )}
+      >
+        <ArrowLeft className="size-4" aria-hidden />
+        回首页
+      </Link>
+    </SidebarFrame>
   );
 }
 
-/** 手机抽屉。从左侧滑出，点遮罩或选完自动关。 */
+/** 手机抽屉。和全站导航共用 SidebarDrawer，选完自动关。 */
 export function StageDrawer({
   open,
   onClose,
@@ -111,61 +130,26 @@ export function StageDrawer({
   done: Stage[];
   onPick: (s: Stage) => void;
 }) {
-  // 抽屉开着时锁背景滚动，否则手指滑动会带着底下的页面一起动
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [open]);
-
-  // Esc 关闭
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 md:hidden">
-      {/* 遮罩也用模糊，和站里其他浮层一致 */}
-      <button
-        type="button"
-        aria-label="关闭"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+    <SidebarDrawer open={open} onClose={onClose} label="今天这样走">
+      <StageList
+        {...props}
+        onPick={(s) => {
+          props.onPick(s);
+          onClose();
+        }}
       />
-      <div
-        className="absolute inset-y-0 left-0 w-72 max-w-[80vw] overflow-y-auto p-4 chrome-material"
-        role="dialog"
-        aria-label="学习环节"
+      <Link
+        href="/"
+        onClick={onClose}
+        className={cn(
+          'mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-[13px]',
+          'text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
+        )}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-[15px] font-semibold">今天这样走</p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭"
-            className="-mr-2 rounded-lg p-2 text-[var(--text-dim)] hover:bg-[var(--surface-2)]"
-          >
-            <X className="size-5" aria-hidden />
-          </button>
-        </div>
-        <StageList
-          {...props}
-          onPick={(s) => {
-            props.onPick(s);
-            onClose();
-          }}
-        />
-      </div>
-    </div>
+        <ArrowLeft className="size-4" aria-hidden />
+        回首页
+      </Link>
+    </SidebarDrawer>
   );
 }

@@ -1,30 +1,24 @@
 /**
- * 浏览器 ↔ 中转层 ↔ StepFun 的 WebSocket 桥。
+ * 浏览器 ↔ 中转层 ↔ 上游语音服务的 WebSocket 桥。
  *
  * 为什么需要这一层：
  * 1. Next 的 Route Handler 拿不住 WebSocket（连接会在响应生成后关掉），
  *    所以必须挂在自定义 server 的 upgrade 事件上。
- * 2. 浏览器的 WebSocket 不能设自定义请求头。StepFun 唯一支持的浏览器侧鉴权
+ * 2. 浏览器的 WebSocket 不能设自定义请求头。这类服务唯一支持的浏览器侧鉴权
  *    是子协议，那会把 API key 明文发给客户端。走中转就能把 key 留在服务端。
  *
  * 这个文件是纯 JS：server.mjs 不经过 Next 编译，用不了 TS 路径别名。
  * 所以它只做协议转发，教学分析回调 Next 的 /api/realtime/coach 完成 ——
  * 数据库和 AI 逻辑仍然留在 TS 侧一份，不重复实现。
+ *
+ * 上游是谁由 ../voice/config.mjs 决定（VOICE_* 环境变量），这里不写死。
+ * 前提是对方也说 OpenAI Realtime 那套事件协议 —— 下面收发的事件名就是那套。
  */
 
 import { WebSocket as WsClient } from 'ws';
-import {
-  REALTIME_MODEL,
-  REALTIME_PATH,
-  DEFAULT_VOICE,
-  UPSTREAM_AUDIO,
-  ASR_MODEL,
-  buildInstructions,
-} from './protocol.mjs';
+import { REALTIME_PATH, UPSTREAM_AUDIO, buildInstructions } from './protocol.mjs';
 import { AI_VOICE_IDS, pace } from '../voice-options.mjs';
-
-const UPSTREAM_BASE =
-  process.env.STEP_REALTIME_URL?.trim() || 'wss://api.stepfun.com/step_plan/v1/realtime';
+import { voiceConfig, MISSING_KEY_MESSAGE } from '../voice/config.mjs';
 
 let seq = 0;
 const eid = () => `e${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -111,17 +105,18 @@ export function attachRelay(wss, opts) {
 
       if (msg.type === 'start') {
         if (up) return; // 一条连接只开一次上游会话
-        const apiKey = process.env.STEP_API_KEY?.trim();
-        if (!apiKey) {
-          send({ type: 'error', message: '服务端缺少 STEP_API_KEY，请在 .env.local 里配置。' });
+        // 每次建会话时读配置：改完 .env.local 重启就生效，不用管模块缓存
+        const cfg = voiceConfig();
+        if (!cfg.apiKey) {
+          send({ type: 'error', message: MISSING_KEY_MESSAGE });
           shutdown();
           return;
         }
 
         ctx = { conversationId: msg.conversationId };
 
-        up = new WsClient(`${UPSTREAM_BASE}?model=${encodeURIComponent(REALTIME_MODEL)}`, {
-          headers: { Authorization: `Bearer ${apiKey}` },
+        up = new WsClient(`${cfg.realtimeUrl}?model=${encodeURIComponent(cfg.realtimeModel)}`, {
+          headers: { Authorization: `Bearer ${cfg.apiKey}` },
         });
 
         up.on('open', () => {
@@ -139,11 +134,11 @@ export function attachRelay(wss, opts) {
                 }),
                 // 音色过白名单：不认的 id 上游会直接报错并断开整条会话，
                 // 与其让一次手改配置毁掉通话，不如静默回落到默认音色。
-                voice: AI_VOICE_IDS.includes(msg.voice) ? msg.voice : DEFAULT_VOICE,
+                voice: AI_VOICE_IDS.includes(msg.voice) ? msg.voice : cfg.defaultVoice,
                 ...UPSTREAM_AUDIO,
                 // 必须显式要求转写，否则拿不到学生说了什么。
                 // 注意：加上 turn_detection: server_vad 会让服务端丢掉这个配置。
-                input_audio_transcription: { model: ASR_MODEL },
+                input_audio_transcription: { model: cfg.asrModel },
               },
             }),
           );

@@ -1,4 +1,4 @@
-/** 每日主题池。一天抽一个，当天 7 个环节全部围绕它展开。 */
+/** 每日主题池。一天抽一个，当天六个环节全部围绕它展开。 */
 export type SeedTheme = { slug: string; zh: string; en: string; tags: string };
 
 export const SEED_THEMES: SeedTheme[] = [

@@ -104,6 +104,15 @@ const num = (v) => {
 };
 const nul = (v) => (v === '' ? null : v);
 
+/**
+ * 把 ECDICT 里的字面量 \n 还原成真换行。
+ *
+ * 注意 parseCsv 上面那段注释说的是"字段里可能带换行"——那是防御性的，
+ * 实际这份 csv 一行一条，多义项是写成两个字符的 \n。不还原的话
+ * translation.split('\n') 永远切不开，前端会把 "\n" 四个字符直接显示出来。
+ */
+const unesc = (v) => (v === '' ? null : v.replace(/\\r\\n|\\n|\\r/g, '\n'));
+
 async function main() {
   const exists = await pool.query(`SELECT to_regclass('dictionary') IS NOT NULL AS ok`);
   if (!exists.rows[0].ok) {
@@ -178,8 +187,8 @@ async function main() {
     batch.push([
       word,
       nul(phonetic),
-      nul(definition),
-      translation,
+      unesc(definition),
+      unesc(translation),
       nul(pos),
       num(collins) || null,
       num(oxford) || null,

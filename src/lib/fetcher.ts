@@ -1,5 +1,7 @@
 /** 客户端调用自家 API 的薄封装：统一解包 {ok,data} / {ok:false,error}。 */
 
+import { withBase } from '@/lib/base-path';
+
 export class ApiError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -23,13 +25,17 @@ async function unwrap<T>(res: Response): Promise<T> {
   return payload.data as T;
 }
 
+/**
+ * 子路径部署时，调用处写的 '/api/xxx' 得补上前缀才打得到人。
+ * 统一在这三个函数里做，调用处一律照旧写相对根的路径。
+ */
 export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { ...init, method: 'GET', cache: 'no-store' });
+  const res = await fetch(withBase(path), { ...init, method: 'GET', cache: 'no-store' });
   return unwrap<T>(res);
 }
 
 export async function apiPost<T>(path: string, body?: unknown, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(withBase(path), {
     ...init,
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
@@ -39,7 +45,7 @@ export async function apiPost<T>(path: string, body?: unknown, init?: RequestIni
 }
 
 export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(withBase(path), {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body ?? {}),

@@ -1,192 +1,292 @@
 @import 'tailwindcss';
 
 /**
- * Apple UI Design System – Verified: 8pt Grid, SF Pro Typography, Material-Depth, Natural Spring Motion
+ * XLearn 设计系统 —— 纸感墨绿（参照 doc.xlingo.fun）
  *
- * 设计基调：iOS / macOS 原生质感。四条规则贯穿整套 token，改之前先读一遍：
+ * 上一版是 iOS 玻璃质感（冷灰底 + systemBlue + 无衬线标题）。这一版换成阅读物的调性，
+ * 四条规则贯穿整套 token，改之前先读一遍：
  *
- * 1. 一切间距是 8 的倍数。1px 描边例外。不对齐网格的版面看起来就是"随手排的"，
- *    这是廉价感最大的来源，比配色重要得多。
- * 2. 浮起的表面用材质，不用投影。卡片、导航、弹层都是半透明 + 背景模糊，
- *    让底下的内容透出来一点 —— 这是 Apple 的深度语言，纯色块 + 大投影是安卓那套。
- * 3. 圆角只有三档：按钮 12px、卡片 20px、徽章 8px。混用多种圆角会让界面显得没规矩。
- * 4. 标题必须收字距。20pt 以上用 -0.022em，不收的话大字会显得松散、业余。
+ * 1. 底色是纸，不是灰。#f6f7f2 带一点暖黄，卡片比它更白（#fbfcf8）往前浮。
+ *    这一档暖偏移是整套观感的地基，把它调回中性灰就又变回后台管理系统了。
+ * 2. 标题用衬线体，正文用无衬线。这是和上一版最大的区别，也是"像读物"的来源。
+ *    中文衬线走系统字体（Songti SC / SimSun），不下载 CJK webfont —— 那是几 MB 的代价。
+ * 3. 主色是墨绿 #1e5d50，不是蓝。强调靠主色文字和 1px 描边，不靠大色块。
+ * 4. 深浅由 <html data-appearance> 决定，不由 prefers-color-scheme 决定。
+ *    因为要支持 浅色/深色/跟随系统 三态开关，系统偏好只是 system 档的输入之一。
  */
 
+/**
+ * dark: 变体改成看属性。
+ * Tailwind v4 默认把 dark: 编译成 prefers-color-scheme 媒体查询，那样手动切换就失效了
+ * （用户选浅色但系统是深色时，两套规则会打架）。站里 87 处 dark: 全靠这一行改道。
+ */
+@custom-variant dark (&:where([data-appearance='dark'], [data-appearance='dark'] *));
+
 @theme {
-  /* 中性色：Apple 系统灰阶。冷调、低饱和，从 systemGray6 到纯黑。 */
-  --color-ink-50: #f9f9fb;
-  --color-ink-100: #f2f2f7; /* systemGray6 */
-  --color-ink-200: #e5e5ea; /* systemGray5 */
-  --color-ink-300: #d1d1d6; /* systemGray4 */
-  --color-ink-400: #c7c7cc; /* systemGray3 */
-  --color-ink-500: #aeaeb2; /* systemGray2 */
-  --color-ink-600: #8e8e93; /* systemGray */
-  --color-ink-700: #636366;
-  --color-ink-800: #3a3a3c;
-  --color-ink-900: #2c2c2e;
-  --color-ink-950: #1c1c1e;
-
-  /* 主色：systemBlue。500 档是标准值，其余按明度推导。 */
-  --color-brand-50: #eff6ff;
-  --color-brand-100: #dbeafe;
-  --color-brand-200: #bfdbfe;
-  --color-brand-300: #7cc0ff;
-  --color-brand-400: #3ea1ff;
-  --color-brand-500: #007aff; /* systemBlue light */
-  --color-brand-600: #0a84ff; /* systemBlue dark，暗色下更亮才够醒目 */
-  --color-brand-700: #0062cc;
-  --color-brand-800: #004999;
-  --color-brand-900: #003166;
-
   /**
-   * 强调色：systemOrange。
-   * 站里 63 处 warm-* 是"标重点/警示"语义，整套刻度都要有，否则类名不生成。
+   * 中性色：暖偏移的鼠尾草灰。
+   * 每一档都带一点绿，和墨绿主色同源，所以灰和主色放在一起不会显脏。
    */
-  --color-warm-50: #fff8f0;
-  --color-warm-100: #ffedd9;
-  --color-warm-200: #ffd9ab;
-  --color-warm-300: #ffc078;
-  --color-warm-400: #ffab4f;
-  --color-warm-500: #ff9500; /* systemOrange */
-  --color-warm-600: #f28100;
-  --color-warm-700: #c26800;
-  --color-warm-800: #8f4d00;
-  --color-warm-900: #663700;
+  --color-ink-50: #fbfcf8;
+  --color-ink-100: #f0f3ed;
+  --color-ink-200: #e7eee6;
+  --color-ink-300: #e0e4dc;
+  --color-ink-400: #c8d2c8;
+  --color-ink-500: #9ca69f;
+  --color-ink-600: #7d8a84;
+  --color-ink-700: #4a5b56;
+  --color-ink-800: #2c3a37;
+  --color-ink-900: #1d2a2a;
+  --color-ink-950: #121b19;
 
   /**
-   * 字体。SF Pro 在 Apple 设备上由 -apple-system 直接命中；
-   * 非 Apple 平台回落到系统原生无衬线（不用 Inter / Roboto —— 那会破坏 OS 级一致性）。
-   * 中文回落链保留，否则 Windows 上中文会掉到宋体。
+   * 主色：墨绿。
+   * 注意 600 比 500 亮，这和 Tailwind 惯例相反 —— 沿用站里既有的约定：
+   * 500 是浅色底下的主色，600 是深色底下的主色（暗背景需要更亮才醒目），
+   * 同时 600 压得住浅色底上的正文对比度（#1b7461 对纸白约 5.4:1），所以链接也用它。
+   */
+  --color-brand-50: #edf5ee;
+  --color-brand-100: #dcece3;
+  --color-brand-200: #bcdccd;
+  --color-brand-300: #8ecdb4;
+  --color-brand-400: #46b592;
+  --color-brand-500: #1e5d50;
+  --color-brand-600: #1b7461;
+  --color-brand-700: #16483e;
+  --color-brand-800: #103a32;
+  --color-brand-900: #0b2a25;
+
+  /**
+   * 强调色：赭黄。
+   * 站里 66 处 warm-* 是"标重点/警示"语义，整套刻度都要有，否则类名不生成。
+   * 不用饱和橙 —— 纸底上会跳出来变成廉价的促销色，赭黄才压得住。
+   */
+  --color-warm-50: #fdf6ea;
+  --color-warm-100: #faebd0;
+  --color-warm-200: #f2d9a8;
+  --color-warm-300: #e9c47f;
+  --color-warm-400: #dcae5c;
+  --color-warm-500: #a9761f;
+  --color-warm-600: #8f6218;
+  --color-warm-700: #75500f;
+  --color-warm-800: #5a3d0b;
+  --color-warm-900: #402b08;
+
+  /**
+   * 字体。
+   * Manrope 只覆盖拉丁字，中文自动落到 PingFang SC / 微软雅黑 ——
+   * 这个 App 里英文是学习对象，值得为它单独上一款字。
    */
   --font-sans:
-    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+    Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  /* 标题用衬线。中文全靠系统字体，一个字节都不下载。 */
+  --font-serif:
+    'Noto Serif SC', 'Songti SC', STSong, SimSun, 'Noto Serif CJK SC', Georgia, serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
   /**
-   * 圆角只保留三档，直接盖掉 Tailwind 默认刷子。
-   * 这样全站写 rounded-lg / xl / 2xl 就自动落到 8 / 12 / 20px，
-   * 不用逐处改类名，也堵住了“随手挑一个圆角”的口子。
-   * md 和 3xl 对齐到相邻档，避免旧代码里的写法冲出第四种圆角。
+   * 圆角两档：卡片 16px、控件 8px。
+   * 直接盖掉 Tailwind 默认刷子，全站写 rounded-lg / xl / 2xl 自动落到新档位，
+   * 不用逐处改类名，也堵住了"随手挑一个圆角"的口子。
    */
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 8px; /* 徽章 / 小元素 */
-  --radius-xl: 12px; /* 按钮 */
-  --radius-2xl: 20px; /* 卡片 / 弹层 */
-  --radius-3xl: 20px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 16px;
+  --radius-3xl: 16px;
 }
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+
+  /* 表面三层：纸底 → 侧栏（比纸底略深，压住层次）→ 卡片（比纸底更白，往前浮） */
+  --bg: #f6f7f2;
+  --bg-sidebar: #f0f3ed;
+  --surface: #fbfcf8;
+  --surface-solid: #fbfcf8;
+  /* 半透明 fill，用在卡片内部再分层：填充、输入框、次级按钮 */
+  --surface-2: #e7eee6;
+  --surface-hover: #e7eee6;
+  --surface-active: #dcece3;
+  /* 顶栏/抽屉的半透明底，配 backdrop-filter */
+  --chrome: rgba(246, 247, 242, 0.88);
+
+  --text: #1d2a2a;
+  --text-body: #2c3a37;
+  --text-title: #173e36;
+  --text-secondary: #4a5b56;
+  --text-dim: #7d8a84;
+  --text-faint: #9ca69f;
+
+  --border: #e0e4dc;
+  --hairline: #e4e9e2;
+  /* 表单控件的描边，比卡片描边深一档 —— 输入框需要看得清边界 */
+  --border-control: #dce1d9;
+  --border-chrome: rgba(37, 55, 51, 0.1);
+
+  --link: #16755e;
+  --accent-bar: #29806c;
 
   /**
-   * 背景和表面。
-   * 背景是 systemGray6，卡片是接近纯白的半透明 —— 两者拉开一档，
-   * 玻璃材质才有东西可透。背景比卡片深是 Apple 的固定关系。
+   * 投影。纸感靠的是"薄薄一层浮起"，所以近距投影极轻，远距投影大而淡。
+   * 两段叠加缺一不可：只有近距会显得贴死在背景上，只有远距会像脏了一块。
    */
-  --bg: #f2f2f7;
-  --surface: rgba(255, 255, 255, 0.72);
-  /* 不透明的表面。用在玻璃叠玻璃的场合：两层半透明叠起来会糊成一团。 */
-  --surface-solid: #ffffff;
-  --surface-2: rgba(120, 120, 128, 0.12); /* Apple 的 fill 色，带一点蓝灰 */
+  --shadow-card: 0 1px 2px rgba(23, 62, 54, 0.04), 0 8px 24px -12px rgba(23, 62, 54, 0.14);
+  --shadow-lifted: 0 4px 8px rgba(23, 62, 54, 0.08), 0 24px 56px -20px rgba(23, 62, 54, 0.3);
+  --shadow-modal: 0 24px 64px -16px rgba(23, 62, 54, 0.28);
+  --drawer-shadow: rgba(28, 47, 41, 0.12);
+  /* 浮层背后的压暗层。带一点墨绿而不是纯黑，纯黑压在米底上会发灰发脏。 */
+  --scrim: rgba(23, 40, 36, 0.32);
 
-  --text: #1c1c1e; /* label */
-  --text-dim: #8e8e93; /* secondaryLabel */
-  --border: rgba(0, 0, 0, 0.1);
-  /* 玻璃表面的描边。Apple 用 0.5px —— 比 1px 更接近"边界暗示"而非"框" */
-  --hairline: rgba(0, 0, 0, 0.08);
-
-  /**
-   * 材质参数：半透明 + 模糊 + 提饱和，三者缺一不可，少了 saturate 会显得脏。
-   * 卡片用 blur(20px)，导航这类常驻 chrome 用 blur(30px)。
-   *
-   * 这里只留注释、不存变量：backdrop-filter 不接受未经 @property 注册的
-   * 自定义属性，写 var() 会被当成无效值静默丢弃（实测 computed 是 none）。
-   * 所以 .card / .chrome-material 里必须写字面量，改的时候两处要一起改。
-   */
-
-  /**
-   * 投影。玻璃已经承担了大部分深度，投影只用来托住浮起的层，必须克制。
-   */
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px -4px rgba(0, 0, 0, 0.06);
-  --shadow-lifted: 0 4px 12px rgba(0, 0, 0, 0.1);
-  --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.16);
-
-  /* 动效曲线。标准过渡用 Apple 的默认缓动，弹层用带回弹的 spring。 */
-  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* 动效曲线。位移用带一点冲出感的缓动，颜色用线性缓动。 */
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.3, 1);
   --ease-spring: cubic-bezier(0.4, 0, 0.2, 1.4);
 
-  /* 语义色：系统红 / 绿。用在错误和成功上，不参与主色。 */
-  --danger: #ff3b30;
-  --success: #34c759;
+  --danger: #a85246;
+  --success: #59a989;
+
+  /**
+   * 布局骨架。
+   * 侧栏宽度和顶栏高度只在这里定义 —— 侧栏用它定位，主内容区用它算左偏移和上边距，
+   * 三处读同一个变量，不会各写一份数字然后对不上。
+   */
+  --topbar-h: 56px;
+  --sidebar-w: 17rem;
+  /* 正文最大宽度。英文一行超过 ~75 字符就难读，宽屏也不能任其拉满 */
+  --content-w: 52rem;
+  /*
+   * 分栏页的最大宽度。给的是"两列各 ~36rem"的空间，不是"一列 76rem" ——
+   * 只有自己排了多列的页面（首页、词库、统计、对话）才用它，
+   * 单列的正文页（导入、设置、语法）继续用 --content-w。
+   */
+  --content-w-wide: 76rem;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (min-width: 640px) {
   :root {
-    /* 暗色下背景是纯黑，表面才浮得起来。Apple 的暗色是"发光的层叠"而非"变灰" */
-    --bg: #000000;
-    --surface: rgba(28, 28, 30, 0.7);
-    --surface-solid: #1c1c1e;
-    --surface-2: rgba(120, 120, 128, 0.24);
-
-    --text: #ffffff;
-    --text-dim: #8e8e93;
-    --border: rgba(255, 255, 255, 0.15);
-    --hairline: rgba(255, 255, 255, 0.12);
-
-    /* 暗背景吃掉投影，改用更强的模糊和描边分层 */
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5);
-    --shadow-lifted: 0 4px 16px rgba(0, 0, 0, 0.6);
-    --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.8);
-
-    --danger: #ff453a;
-    --success: #30d158;
+    --topbar-h: 68px;
   }
+}
+
+/**
+ * 深色。
+ * 底色是墨绿倾向的近黑（#0f1614），不是纯黑 —— 纯黑配墨绿会显得脏。
+ * 这里只换变量，不换结构：所有 .card / .chrome-material 自动跟着变。
+ */
+:root[data-appearance='dark'] {
+  color-scheme: dark;
+
+  --bg: #0f1614;
+  --bg-sidebar: #131c19;
+  --surface: #17211f;
+  --surface-solid: #17211f;
+  --surface-2: #1d2926;
+  --surface-hover: #1d2926;
+  --surface-active: #1b3b32;
+  --chrome: rgba(15, 22, 20, 0.86);
+
+  --text: #dde6e2;
+  --text-body: #c9d5d0;
+  --text-title: #edf5f1;
+  --text-secondary: #aab8b2;
+  --text-dim: #8a9893;
+  --text-faint: #78857f;
+
+  --border: #253230;
+  --hairline: #222e2b;
+  --border-control: #2b3835;
+  --border-chrome: rgba(255, 255, 255, 0.07);
+
+  --link: #5fcfad;
+  --accent-bar: #46b592;
+
+  /* 暗背景吃掉投影，改用更重的黑和描边分层 */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-lifted: 0 4px 10px rgba(0, 0, 0, 0.45), 0 24px 56px -20px rgba(0, 0, 0, 0.7);
+  --shadow-modal: 0 24px 64px -16px rgba(0, 0, 0, 0.75);
+  --drawer-shadow: rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.58);
+
+  --danger: #f0a396;
+  --success: #4fb589;
 }
 
 html,
 body {
   background: var(--bg);
-  color: var(--text);
+  color: var(--text-body);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   /* PWA 里避免整页橡皮筋滚动 */
   overscroll-behavior-y: none;
 }
 
-/**
- * 排版刻度。
- * Apple 的字距规则：越大的字越要收紧，正文轻微收，标题收到 -0.022em。
- * 这条比配色更影响"像不像原生" —— 不收字距的大标题一眼就是网页。
- */
-h1,
-h2,
-h3 {
-  letter-spacing: -0.022em;
-  line-height: 1.2;
-  font-weight: 600;
-}
-
 body {
-  letter-spacing: -0.011em;
-  line-height: 1.5;
+  line-height: 1.65;
+}
+
+/* 主题切换时让底色和描边过渡，避免闪一下 */
+body,
+.card,
+.chrome-material,
+.sidebar-surface {
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 }
 
 /**
- * 卡片 = 一层玻璃。
+ * 排版。
+ * h1 用衬线体 + 收字距，这是"读物感"的主要来源。
+ * h2/h3 站里绝大多数是 text-sm 的小节标题（19 个 h2 里 14 个是），
+ * 所以不动它们的字体族 —— 小字号上衬线只会显得糊。需要衬线的大标题手动加 .serif。
+ */
+h1 {
+  font-family: var(--font-serif);
+  color: var(--text-title);
+  font-weight: 700;
+  letter-spacing: -0.024em;
+  line-height: 1.3;
+}
+
+h2,
+h3,
+h4 {
+  color: var(--text-title);
+  font-weight: 640;
+  letter-spacing: -0.012em;
+  line-height: 1.4;
+}
+
+/* 衬线逃生口：需要衬线的大标题手动加，比如卡片主标题、环节题干 */
+.serif {
+  font-family: var(--font-serif);
+  letter-spacing: -0.02em;
+}
+
+/**
+ * 卡片 = 一张纸。
  *
- * 半透明背景 + backdrop-filter 必须同时存在，只有 rgba 的话就只是"淡色块"。
- * 注意：backdrop-filter 不要手写 -webkit- 前缀 —— 构建用的 Lightning CSS 会在两者
- * 共存时把标准属性折叠掉、只留前缀版，而 Electron 内嵌浏览器只认标准属性，
- * 结果模糊整个失效（实测 computed 为 none）。交给构建工具自己加前缀。
- * 圆角固定 20px，是 Apple 卡片/弹层的标准值。
+ * 上一版是半透明玻璃 + backdrop-filter，这一版换成实色纸面 + 1px 描边 + 双层投影。
+ * 实色是有意的：纸不透光。卡片里再叠卡片时也不会像玻璃那样糊成一团，
+ * 所以 .card-solid 现在只是 .card 的别名（保留类名，站里有 25 处在用）。
  */
 .card {
   background: var(--surface);
-  backdrop-filter: saturate(180%) blur(20px);
-  border: 0.5px solid var(--hairline);
-  border-radius: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.card-solid {
+  background: var(--surface-solid);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
   box-shadow: var(--shadow-card);
 }
 
@@ -195,44 +295,76 @@ body {
   box-shadow: var(--shadow-lifted);
 }
 
-/**
- * 不透明卡片。
- * 玻璃叠玻璃会糊，所以卡片内部还要再分层时用这个。
- */
-.card-solid {
-  background: var(--surface-solid);
-  border: 0.5px solid var(--hairline);
-  border-radius: 20px;
-  box-shadow: var(--shadow-card);
+/* 可点的卡片：悬停轻轻抬起来。触屏没有悬停，只会看到按下的缩放。 */
+.card-interactive {
+  transition:
+    transform 0.3s var(--ease-standard),
+    box-shadow 0.3s ease,
+    border-color 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-interactive:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lifted);
+    border-color: var(--border);
+  }
 }
 
 /**
- * 常驻 chrome 的材质：顶栏、底部导航。
- * 比卡片模糊更强，因为内容会从下面滚过去。
+ * 常驻 chrome：顶栏、抽屉。
+ * 这一层保留背景模糊 —— 内容从下面滚过去时透出一点，是唯一还需要材质的地方。
+ *
+ * 注意：backdrop-filter 不要手写 -webkit- 前缀。构建用的 Lightning CSS 会在两者
+ * 共存时把标准属性折叠掉、只留前缀版，而 Electron 内嵌浏览器只认标准属性，
+ * 结果模糊整个失效（实测 computed 为 none）。交给构建工具自己加前缀。
  */
 .chrome-material {
-  background: var(--surface);
-  /* 同样不能走 var()，原因见 .card 的注释 */
-  backdrop-filter: saturate(180%) blur(30px);
+  background: var(--chrome);
+  backdrop-filter: saturate(1.4) blur(14px);
+}
+
+/* 侧栏底色。比纸底深一档，让主内容区显得是"抬起来的那一侧" */
+.sidebar-surface {
+  background: var(--bg-sidebar);
+}
+
+/**
+ * 小节标签：全大写 + 拉字距 + 极小字号。
+ * 参照站用它分隔版块，比再来一个 h2 更轻，不会和卡片里的标题打架。
+ */
+.section-label {
+  font-size: 11.5px;
+  font-weight: 660;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 /**
  * 英文内容。
- *
- * 原本这里用衷线体和中文拉开区别，但 Apple 体系里不换字体族 ——
- * SF Pro 本身就是拉丁字首选，靠 tnum（等宽数字）和字距微调就够了。
- * 保留这个类名是因为站里有 54 处在用，改成英文专用的排版细节而不是删掉。
+ * 这个 App 里英文是学习对象，所以给它等宽数字和更紧的字距。
+ * 站里有 54 处在用，不改语义只改细节。
  */
 .en {
-  font-feature-settings: 'liga' 1, 'kern' 1, 'tnum' 1;
-  letter-spacing: -0.01em;
+  font-feature-settings:
+    'liga' 1,
+    'kern' 1,
+    'tnum' 1;
+  letter-spacing: -0.005em;
 }
 
+/* 站里 190 处在用，是"次要文字"的统一出口 */
 .dim {
   color: var(--text-dim);
 }
 
-/* 可点击的单词：阅读/听力里点一下即查词 */
+/* 单行代码/词性标注这类小块 */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* 可点击的单词：阅读/听力里点一下即查词。虚线下划线暗示"这能点" */
 .tappable-word {
   cursor: pointer;
   border-radius: 4px;
@@ -240,31 +372,27 @@ body {
   transition: background-color 0.2s var(--ease-standard);
 }
 .tappable-word:hover {
-  background: var(--surface-2);
+  background: var(--surface-active);
 }
 
 /**
  * 目标词高亮。
- * 用 systemBlue 的浅底 + 中等字重，而不是荧光笔效果 ——
- * Apple 标记语言是"填色块"，手绘感的斜纹涂抹在这套体系里会很违和。
+ * 主色浅底 + 主色文字，不用荧光笔效果 —— 纸面上斜纹涂抹会显得脏。
  */
 .target-word {
-  background: color-mix(in srgb, var(--color-brand-500) 14%, transparent);
+  background: color-mix(in srgb, var(--color-brand-400) 20%, transparent);
   border-radius: 4px;
   padding: 0 3px;
   font-weight: 500;
   color: var(--color-brand-700);
 }
-@media (prefers-color-scheme: dark) {
-  .target-word {
-    color: var(--color-brand-300);
-  }
+[data-appearance='dark'] .target-word {
+  color: var(--color-brand-300);
 }
 
 /**
  * 入场动效。
- * Apple 的入场是"从下方轻推 + 淡入"，位移要小（8px），时长要短。
- * 位移大了就变成"飞进来"，那是网页动效不是系统动效。
+ * 位移要小（8px）、时长要短。位移大了就变成"飞进来"，那是网页动效不是应用动效。
  */
 @keyframes fade-up {
   from {
@@ -296,9 +424,10 @@ body {
 .stagger > *:nth-child(7) { animation-delay: 300ms; }
 .stagger > *:nth-child(8) { animation-delay: 350ms; }
 
+/* 录音中的呼吸圈 */
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-500) 60%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-brand-400) 55%, transparent);
   }
   70% {
     box-shadow: 0 0 0 12px transparent;
@@ -320,6 +449,9 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .card-interactive:hover {
+    transform: none;
+  }
 }
 
 /* 滚动条低调一点 */
@@ -327,22 +459,30 @@ body {
   width: 10px;
   height: 10px;
 }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
   background: var(--color-ink-400);
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-thumb {
-    background: var(--color-ink-700);
-  }
+[data-appearance='dark'] ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  background-clip: padding-box;
 }
 
 /**
  * 键盘可达性：统一焦点环。
- * Apple 用 3px 的半透明主色光圈，不是实线描边。
+ * 主色实线描边 + 2px 偏移，比光圈在纸面上更清楚。
  */
 :focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-500) 50%, transparent);
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
   border-radius: 8px;
 }
+[data-appearance='dark'] :focus-visible {
+  outline-color: var(--color-brand-400);
+}
+

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Languages } from 'lucide-react';
 import { Badge, Button, Card, Textarea } from '@/components/ui';
-import { Explain, Speak, TappableText } from './shared';
+import { ColumnLabel, Explain, Speak, Split, StickyColumn, TappableText } from './shared';
 import type { StageProps } from './types';
 import type { ReadingData } from '@/lib/ai/schemas';
 
@@ -19,63 +19,73 @@ export function ReadingStage({ payload, meta, onDone, onRegenerate, submitting }
   const questions = payload.questions ?? [];
 
   return (
-    <div className="space-y-6">
-      {/*
-        删了「点任意一个词可以直接查」这句操作说明。
-        点词查词是全站一致的交互，在每个阅读页都写一遍是噪音；
-        高亮词本身的形态已经在提示它可点。
-      */}
-      <Card>
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h2 className="en text-lg font-semibold">{payload.title_en}</h2>
-            <p className="text-sm dim">{payload.title_zh}</p>
-          </div>
-          <Speak text={`${payload.title_en}. ${payload.passage_en}`} label="朗读全文" />
-        </div>
+    /*
+      删了「点任意一个词可以直接查」这句操作说明。
+      点词查词是全站一致的交互，在每个阅读页都写一遍是噪音；
+      高亮词本身的形态已经在提示它可点。
 
-        <div className="mt-4 leading-loose">
-          <TappableText text={payload.passage_en} highlight={targets} className="text-[15px]" />
-        </div>
+      宽屏分两列：原文钉在左边，右边答题。开放式问题本来就要求回看原文，
+      单列的话每答一题都得滚上去找。
+    */
+    <Split
+      aside={
+        <StickyColumn>
+          <Card>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="en serif text-[21px] font-bold leading-snug text-[var(--text-title)]">
+                  {payload.title_en}
+                </h2>
+                <p className="mt-0.5 text-sm dim">{payload.title_zh}</p>
+              </div>
+              <Speak text={`${payload.title_en}. ${payload.passage_en}`} label="朗读全文" />
+            </div>
 
-        <button
-          type="button"
-          onClick={() => setShowZh((s) => !s)}
-          className="mt-4 inline-flex items-center gap-1.5 text-xs text-brand-600 hover:underline dark:text-brand-300"
-        >
-          <Languages className="size-3.5" aria-hidden />
-          {showZh ? '收起译文' : '看中文译文'}
-        </button>
-        {showZh && (
-          <p className="mt-2 whitespace-pre-wrap rounded-xl bg-[var(--surface-2)] p-3 text-sm">
-            {payload.passage_zh}
-          </p>
-        )}
-      </Card>
+            <div className="mt-4 leading-loose text-[var(--text-body)]">
+              <TappableText text={payload.passage_en} highlight={targets} className="text-[15.5px]" />
+            </div>
 
-      {/* 可选链兜底：AI 偶尔漏字段，不该让整页白屏 */}
-      {payload.glosses?.length ? (
-        <Card>
-          <p className="text-sm font-semibold">文中值得留意的表达</p>
-          <ul className="mt-3 space-y-3">
-            {payload.glosses.map((g, i) => (
-              <li key={i}>
-                <div className="flex items-center gap-1.5">
-                  <span className="en text-sm font-medium">{g.term}</span>
-                  <Speak text={g.term} className="p-0.5" />
-                  <span className="text-sm dim">{g.meaning_zh}</span>
-                </div>
-                <p className="mt-0.5 text-xs dim">{g.note_zh}</p>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
+            <button
+              type="button"
+              onClick={() => setShowZh((s) => !s)}
+              className="mt-4 inline-flex items-center gap-1.5 text-xs text-[var(--link)] hover:underline"
+            >
+              <Languages className="size-3.5" aria-hidden />
+              {showZh ? '收起译文' : '看中文译文'}
+            </button>
+            {showZh && (
+              <p className="mt-2.5 whitespace-pre-wrap rounded-lg border border-[var(--hairline)] bg-[var(--bg-sidebar)] p-3 text-sm leading-relaxed text-[var(--text-body)]">
+                {payload.passage_zh}
+              </p>
+            )}
+          </Card>
 
+          {/* 可选链兜底：AI 偶尔漏字段，不该让整页白屏 */}
+          {payload.glosses?.length ? (
+            <Card>
+              <p className="section-label">文中值得留意的表达</p>
+              <ul className="mt-3 space-y-3">
+                {payload.glosses.map((g, i) => (
+                  <li key={i}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="en text-sm font-semibold text-[var(--text-title)]">{g.term}</span>
+                      <Speak text={g.term} className="p-0.5" />
+                      <span className="text-sm dim">{g.meaning_zh}</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-relaxed dim">{g.note_zh}</p>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </StickyColumn>
+      }
+    >
+      <ColumnLabel>读完回答</ColumnLabel>
       {questions.map((q, i) => (
         <Card key={i}>
           <Badge>问题 {i + 1}</Badge>
-          <p className="mt-2 text-sm">{q.q_zh}</p>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-body)]">{q.q_zh}</p>
           <Textarea
             rows={2}
             className="en mt-3"
@@ -97,7 +107,7 @@ export function ReadingStage({ payload, meta, onDone, onRegenerate, submitting }
             <Explain>
               <div className="flex items-start gap-2">
                 <div className="flex-1">
-                  <TappableText text={q.answer_en} className="block text-sm font-medium" />
+                  <TappableText text={q.answer_en} className="block text-sm font-semibold" />
                   <p className="mt-2 text-xs dim">{q.explain_zh}</p>
                 </div>
                 <Speak text={q.answer_en} />
@@ -114,6 +124,6 @@ export function ReadingStage({ payload, meta, onDone, onRegenerate, submitting }
       <button type="button" onClick={onRegenerate} className="w-full text-center text-xs dim hover:underline">
         换一篇
       </button>
-    </div>
+    </Split>
   );
 }

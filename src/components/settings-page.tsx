@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AudioLines, Gauge, Loader2, Play, Volume2 } from 'lucide-react';
-import { Badge, Button, Card, ErrorNote, Input, Spinner } from '@/components/ui';
+import { Badge, Button, Card, ErrorNote, Input, PageHeader, Spinner } from '@/components/ui';
 import { apiGet, apiPatch } from '@/lib/fetcher';
+import { withBase } from '@/lib/base-path';
 import { useTts } from '@/hooks/useSpeech';
 import type { SpeechPace, UserProfile } from '@/lib/types';
 import { AI_VOICES, PACES, PACE_KEYS, pace } from '@/lib/voice-options';
@@ -112,7 +113,8 @@ export function SettingsPage() {
     setPreviewError(null);
     audioRef.current?.pause();
     try {
-      const res = await fetch('/api/voice/preview', {
+      // 这里要拿 blob 不走 fetcher 的 JSON 解包，所以得自己补部署前缀
+      const res = await fetch(withBase('/api/voice/preview'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ voice: voiceId, paceKey: user.speech_pace, text: PREVIEW_TEXT }),
@@ -139,17 +141,17 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="space-y-4 py-2 fade-up">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
-        <p className="mt-1.5 text-sm dim">这些直接决定 AI 明天给你出什么内容。</p>
-      </header>
+    // 单列设置项，自己收窄 —— 一行拉太长，标签和右边的选项会离得太远
+    <div className="mx-auto max-w-[var(--content-w)] space-y-4 py-2 fade-up">
+      <PageHeader eyebrow="Settings" title="设置">
+        这些直接决定 AI 明天给你出什么内容。
+      </PageHeader>
 
       {error && <ErrorNote message={error} />}
 
       <Card className="space-y-4">
         <div>
-          <label htmlFor="name" className="text-sm font-medium">
+          <label htmlFor="name" className="text-sm font-medium text-[var(--text-title)]">
             怎么称呼你
           </label>
           <Input
@@ -164,8 +166,8 @@ export function SettingsPage() {
         <Group label="现在的水平">
           {LEVELS.map((l) => (
             <Chip key={l.v} active={user.level === l.v} onClick={() => patch({ level: l.v })}>
-              <span className="font-medium">{l.v}</span>
-              <span className="ml-1.5 text-xs opacity-70">{l.zh}</span>
+              <span className="en font-semibold">{l.v}</span>
+              <span className="ml-1.5 text-xs opacity-75">{l.zh}</span>
             </Chip>
           ))}
         </Group>
@@ -210,7 +212,7 @@ export function SettingsPage() {
       <Card>
         <div className="flex items-center gap-1.5">
           <Volume2 className="size-4 dim" aria-hidden />
-          <h2 className="text-sm font-semibold">逐句朗读的声音</h2>
+          <h2 className="text-sm">逐句朗读的声音</h2>
         </div>
         <p className="mt-1.5 text-xs dim">
           点单词、例句旁边的喇叭时用的声音，走浏览器自带的语音包，和畅聊那套是两回事。
@@ -248,7 +250,7 @@ export function SettingsPage() {
       <Card>
         <div className="flex items-center gap-1.5">
           <Gauge className="size-4 dim" aria-hidden />
-          <h2 className="text-sm font-semibold">说话速度</h2>
+          <h2 className="text-sm">说话速度</h2>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2">
           {PACE_KEYS.map((k) => (
@@ -258,14 +260,15 @@ export function SettingsPage() {
               onClick={() => patch({ speech_pace: k as SpeechPace })}
               aria-pressed={user.speech_pace === k}
               className={cn(
-                'touch-manipulation rounded-xl border px-3 py-2.5 text-center transition-colors active:translate-y-px',
+                'touch-manipulation rounded-lg border px-3 py-2.5 text-center',
+                'transition-colors duration-200 [transition-timing-function:var(--ease-standard)] active:translate-y-px',
                 user.speech_pace === k
-                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-100'
-                  : 'border-[var(--border)] hover:bg-[var(--surface-2)]',
+                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-700 dark:bg-brand-900/40 dark:text-brand-200'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)]',
               )}
             >
-              <span className="block text-sm font-medium">{PACES[k].zh}</span>
-              <span className="block text-[11px] opacity-70">{PACES[k].hint}</span>
+              <span className="block text-sm font-semibold">{PACES[k].zh}</span>
+              <span className="block text-[11px] opacity-75">{PACES[k].hint}</span>
             </button>
           ))}
         </div>
@@ -278,22 +281,23 @@ export function SettingsPage() {
       <Card>
         <div className="flex items-center gap-1.5">
           <AudioLines className="size-4 dim" aria-hidden />
-          <h2 className="text-sm font-semibold">畅聊时 AI 的声音</h2>
+          <h2 className="text-sm">畅聊时 AI 的声音</h2>
         </div>
         <p className="mt-1.5 text-xs leading-relaxed dim">
           这些是中文音色在说英文，口音会偏中式 —— 上游的英文音色不支持实时对话，暂时只能这样。
           挑一个你听着舒服的就行。
         </p>
-        {previewError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{previewError}</p>}
+        {previewError && <p className="mt-2 text-xs text-[var(--danger)]">{previewError}</p>}
         <div className="mt-3 space-y-1.5">
           {AI_VOICES.map((v, i) => (
             <div
               key={v.id}
               className={cn(
                 'flex items-center gap-2 rounded-lg border px-3 py-2',
+                'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
                 (user.ai_voice ?? AI_VOICES[0].id) === v.id
-                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30'
-                  : 'border-[var(--border)]',
+                  ? 'border-brand-500 bg-brand-50 dark:border-brand-700 dark:bg-brand-900/30'
+                  : 'border-[var(--hairline)] bg-[var(--bg-sidebar)]',
               )}
             >
               <button
@@ -302,7 +306,7 @@ export function SettingsPage() {
                 aria-pressed={(user.ai_voice ?? AI_VOICES[0].id) === v.id}
                 className="min-w-0 flex-1 text-left"
               >
-                <span className="block truncate text-sm">
+                <span className="block truncate text-sm font-medium text-[var(--text-title)]">
                   {v.zh}
                   {i === 0 && !user.ai_voice && <span className="ml-1.5 text-[11px] dim">当前</span>}
                 </span>
@@ -329,15 +333,19 @@ export function SettingsPage() {
         </p>
       </Card>
 
-      <div className="sticky bottom-20 z-10 flex items-center gap-3 sm:bottom-4">
-        <Button onClick={save} loading={saving} size="lg" className="flex-1 shadow-lg">
+      {/*
+        悬浮的保存条。托盘本身带纸面底 + 描边 + 抬起投影，按钮就不用自己扛
+        shadow-lg —— 这套体系里"浮起来"是容器的属性，不是控件的属性。
+      */}
+      <div className="sticky bottom-20 z-10 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lifted)] sm:bottom-4">
+        <Button onClick={save} loading={saving} size="lg" className="flex-1">
           保存
         </Button>
         {saved && <Badge tone="success">已保存</Badge>}
       </div>
 
       <Card>
-        <h2 className="text-sm font-semibold">关于数据</h2>
+        <h2 className="text-sm">关于数据</h2>
         <p className="mt-2 text-sm leading-relaxed dim">
           所有学习记录都存在你自己配置的 PostgreSQL 库里（连接信息在 <code className="en">.env.local</code>），
           没有账号系统。换电脑只要连同一个库就能接着学。
@@ -353,7 +361,7 @@ export function SettingsPage() {
 function Group({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-sm font-medium">{label}</p>
+      <p className="text-sm font-medium text-[var(--text-title)]">{label}</p>
       <div className="mt-1.5 flex flex-wrap gap-2">{children}</div>
     </div>
   );
@@ -374,10 +382,11 @@ function Chip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'rounded-full border px-3 py-1.5 text-sm transition-colors',
+        'rounded-md border px-3 py-1.5 text-[13px]',
+        'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
         active
-          ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-100'
-          : 'border-[var(--border)] hover:bg-[var(--surface-2)]',
+          ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700 dark:border-brand-700 dark:bg-brand-900/40 dark:text-brand-200'
+          : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
       )}
     >
       {children}
@@ -408,10 +417,10 @@ function Slider({
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <label htmlFor={id} className="text-sm font-medium">
+        <label htmlFor={id} className="text-sm font-medium text-[var(--text-title)]">
           {label}
         </label>
-        <span className="text-sm tabular-nums dim">
+        <span className="serif text-[17px] font-bold tabular-nums text-[var(--text-title)]">
           {value} {unit}
         </span>
       </div>
@@ -423,9 +432,9 @@ function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 w-full accent-[var(--brand-600)]"
+        className="mt-2.5 w-full accent-[var(--accent-bar)]"
       />
-      {hint && <p className="mt-1 text-xs dim">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs leading-relaxed dim">{hint}</p>}
     </div>
   );
 }
@@ -449,11 +458,14 @@ function VoiceRow({
     <div
       className={cn(
         'flex items-center gap-2 rounded-lg border px-3 py-2',
-        active ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30' : 'border-[var(--border)]',
+        'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
+        active
+          ? 'border-brand-500 bg-brand-50 dark:border-brand-700 dark:bg-brand-900/30'
+          : 'border-[var(--hairline)] bg-[var(--bg-sidebar)]',
       )}
     >
       <button type="button" onClick={onPick} aria-pressed={active} className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-sm">{name ?? '自动选择'}</span>
+        <span className="block truncate text-sm font-medium text-[var(--text-title)]">{name ?? '自动选择'}</span>
         <span className="text-[11px] dim">
           {name ? `${lang}${local ? ' · 本地' : ' · 云端'}` : '按系统可用的英文语音挑一个'}
         </span>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import { Badge, Button, Card, ErrorNote, Input, Textarea } from '@/components/ui';
+import { Badge, Button, Card, ErrorNote, Input, PageHeader, Textarea } from '@/components/ui';
 import { Speak, TappableText } from '@/components/stages/shared';
 import { apiGet, apiPost } from '@/lib/fetcher';
 import type { ExtractData } from '@/lib/ai/schemas';
@@ -82,13 +82,11 @@ export function ImportPage() {
   const chars = raw.trim().length;
 
   return (
-    <div className="space-y-4 py-2 fade-up">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">导入素材</h1>
-        <p className="mt-1.5 text-sm dim">
-          扔一段你真的想看懂的东西进来 —— 美剧台词、技术文档、歌词都行。AI 按你的水平挑词，词直接进复习队列。
-        </p>
-      </header>
+    // 单列表单 + 正文，自己收窄，别跟着外层放宽
+    <div className="mx-auto max-w-[var(--content-w)] space-y-4 py-2 fade-up">
+      <PageHeader eyebrow="Import" title="导入素材">
+        扔一段你真的想看懂的东西进来 —— 美剧台词、技术文档、歌词都行。AI 按你的水平挑词，词直接进复习队列。
+      </PageHeader>
 
       <Card className="space-y-4">
         <div className="flex flex-wrap gap-2">
@@ -99,10 +97,11 @@ export function ImportPage() {
               onClick={() => setKind(k.v)}
               aria-pressed={kind === k.v}
               className={cn(
-                'rounded-full border px-3 py-1.5 text-sm transition-colors',
+                'rounded-md border px-3 py-1.5 text-[13px] transition-colors duration-200',
+                '[transition-timing-function:var(--ease-standard)]',
                 kind === k.v
-                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-100'
-                  : 'border-[var(--border)] hover:bg-[var(--surface-2)]',
+                  ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700 dark:bg-brand-900/40 dark:text-brand-200'
+                  : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
               )}
             >
               {k.zh}
@@ -111,7 +110,7 @@ export function ImportPage() {
         </div>
 
         <div>
-          <label htmlFor="mtitle" className="text-sm font-medium">
+          <label htmlFor="mtitle" className="text-sm font-medium text-[var(--text-title)]">
             起个名字（可以留空）
           </label>
           <Input
@@ -125,7 +124,7 @@ export function ImportPage() {
         </div>
 
         <div>
-          <label htmlFor="mraw" className="text-sm font-medium">
+          <label htmlFor="mraw" className="text-sm font-medium text-[var(--text-title)]">
             正文
           </label>
           <Textarea
@@ -137,18 +136,18 @@ export function ImportPage() {
             onChange={(e) => setRaw(e.target.value)}
             className="en mt-1.5"
           />
-          <div className="mt-1 flex items-center justify-between text-xs dim">
+          <div className="mt-1.5 flex items-center justify-between text-xs tabular-nums dim">
             <span>{chars < MIN ? `还需要 ${MIN - chars} 个字符` : `${chars} 字符`}</span>
             <span>最多 40000 字符</span>
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm text-[var(--text-body)]">
           <input
             type="checkbox"
             checked={enroll}
             onChange={(e) => setEnroll(e.target.checked)}
-            className="size-4 accent-[var(--brand-600)]"
+            className="size-4 rounded-sm accent-[var(--accent-bar)]"
           />
           抽出来的词直接加入学习队列
         </label>
@@ -166,24 +165,24 @@ export function ImportPage() {
         <Card className="space-y-4 fade-up">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold">{result.title}</h2>
+              <h2 className="serif text-[19px] font-bold text-[var(--text-title)]">{result.title}</h2>
               {result.enrolled && <Badge tone="success">{result.words.length} 个词已入队</Badge>}
             </div>
             <p className="mt-1.5 text-sm leading-relaxed dim">{result.summaryZh}</p>
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold">挑出来的词</h3>
+            <h3 className="section-label">挑出来的词</h3>
             <ul className="mt-2 space-y-2">
               {result.words.map((w) => (
-                <li key={w.id} className="rounded-lg bg-[var(--surface-2)] p-3">
+                <li key={w.id} className="rounded-lg border border-[var(--hairline)] bg-[var(--bg-sidebar)] p-3">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="en text-base font-semibold">{w.term}</span>
+                    <span className="en text-[17px] font-semibold text-[var(--text-title)]">{w.term}</span>
                     {w.phonetic && <span className="en text-xs dim">{w.phonetic}</span>}
                     {w.pos && <Badge>{w.pos}</Badge>}
                     <Speak text={w.term} className="ml-auto" />
                   </div>
-                  <p className="mt-1 text-sm">{w.meaning_zh}</p>
+                  <p className="mt-1 text-sm text-[var(--text-body)]">{w.meaning_zh}</p>
                   {w.example_en && (
                     <div className="mt-1.5">
                       <TappableText text={w.example_en} className="text-sm" />
@@ -200,11 +199,11 @@ export function ImportPage() {
 
           {result.grammarNotes.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold">值得记的句式</h3>
+              <h3 className="section-label">值得记的句式</h3>
               <ul className="mt-2 space-y-2">
                 {result.grammarNotes.map((g, i) => (
-                  <li key={i} className="rounded-lg border border-[var(--border)] p-3">
-                    <p className="text-sm font-medium">{g.title_zh}</p>
+                  <li key={i} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+                    <p className="text-sm font-semibold text-[var(--text-title)]">{g.title_zh}</p>
                     <p className="mt-1 text-sm dim">{g.explain_zh}</p>
                     <div className="mt-1.5 flex items-start gap-1.5">
                       <TappableText text={g.example_en} className="flex-1 en text-sm" />
@@ -222,15 +221,15 @@ export function ImportPage() {
 
       {history.length > 0 && (
         <Card>
-          <h2 className="text-sm font-semibold">导入过的</h2>
-          <ul className="mt-2 divide-y divide-[var(--border)]">
+          <h2 className="text-sm">导入过的</h2>
+          <ul className="mt-2 divide-y divide-[var(--hairline)]">
             {history.map((m) => (
               <li key={m.id} className="flex items-center gap-3 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{m.title}</p>
+                  <p className="truncate text-sm font-medium text-[var(--text-title)]">{m.title}</p>
                   <p className="truncate text-xs dim">{m.summary_zh}</p>
                 </div>
-                <span className="shrink-0 text-xs dim">{m.created_at.slice(5, 10)}</span>
+                <span className="shrink-0 text-xs tabular-nums dim">{m.created_at.slice(5, 10)}</span>
               </li>
             ))}
           </ul>

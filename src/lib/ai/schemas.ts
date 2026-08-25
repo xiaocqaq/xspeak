@@ -108,32 +108,6 @@ export const SpeakingPayload = z.object({
     .describe('卡住时可以照着说的句型'),
 });
 
-export const WritingPayload = z.object({
-  prompt_en: z.string().describe('写作任务，英文'),
-  prompt_zh: z.string().describe('中文说明，讲清要写几句、写什么'),
-  must_use: z.array(z.string()).min(2),
-  sample_en: z.string().describe('一个 A2 水平能写出来的参考答案'),
-  checklist_zh: z.array(z.string()).min(2).max(4).describe('自检要点'),
-});
-
-/** 写作批改 */
-export const CorrectionPayload = z.object({
-  score: z.number().min(0).max(100),
-  corrected_en: z.string().describe('改好的版本，尽量保留原意和原有句式'),
-  summary_zh: z.string().describe('两三句总体评价，先说做对的地方'),
-  issues: z
-    .array(
-      z.object({
-        wrong: z.string().describe('原文里出问题的片段，必须是原文子串'),
-        correct: z.string(),
-        kind: z.enum(['grammar', 'word_choice', 'spelling', 'style']),
-        note_zh: z.string(),
-      }),
-    )
-    .describe('没有问题就给空数组'),
-  used_target_words: z.array(z.string()).describe('实际用上的目标词'),
-});
-
 /** 口语对话回复 */
 export const ChatReplyPayload = z.object({
   reply_en: z.string().describe('自然的英文回应，1-3 句，保持对话推进'),
@@ -219,8 +193,6 @@ export type GrammarData = z.infer<typeof GrammarPayload>;
 export type ListeningData = z.infer<typeof ListeningPayload>;
 export type ReadingData = z.infer<typeof ReadingPayload>;
 export type SpeakingData = z.infer<typeof SpeakingPayload>;
-export type WritingData = z.infer<typeof WritingPayload>;
-export type CorrectionData = z.infer<typeof CorrectionPayload>;
 export type ChatReplyData = z.infer<typeof ChatReplyPayload>;
 export type CoachingData = z.infer<typeof CoachingPayload>;
 export type LookupData = z.infer<typeof LookupPayload>;

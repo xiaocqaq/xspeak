@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AudioLines, ChevronRight, History, Keyboard, Loader2, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
-import { Badge, Button, Card, Empty, ErrorNote, Input, Spinner } from '@/components/ui';
+import { AudioLines, ChevronLeft, ChevronRight, History, Keyboard, Loader2, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
+import { Badge, Button, Card, Empty, ErrorNote, Input, PageHeader, Spinner } from '@/components/ui';
 import { ChatPanel, type StartConfig } from '@/components/chat-panel';
 import { VoiceChatLauncher } from '@/components/voice-chat-launcher';
 import { apiGet, apiPost } from '@/lib/fetcher';
@@ -141,24 +141,38 @@ export function ChatPage() {
   }, [loadScenarios]);
 
   if (config || openId) {
+    const back = () => {
+      setConfig(null);
+      setOpenId(null);
+    };
+
+    const voice = mode === 'voice' && config;
+
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">{config?.title ?? '继续对话'}</h1>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setConfig(null);
-              setOpenId(null);
-            }}
+      /* 通话模式要两列（面板 + 字幕）所以吃满容器；打字模式是气泡流，收回正文宽度 */
+      <div className={cn('space-y-3', !voice && 'mx-auto w-full max-w-[var(--content-w)]')}>
+        {/*
+          进了对话就只留一条返回。原来这里是「大标题 + 场景中文 + 换场景」三行一坨，
+          而通话面板本身已经写着跟谁在聊、聊什么 —— 同一件事说两遍，还把对话挤到屏幕下半截。
+          文字模式没有那个面板，所以标题只在文字模式补一行小字。
+        */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={back}
+            className="-ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[13px] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]"
           >
+            <ChevronLeft className="size-4" aria-hidden />
             换场景
-          </Button>
+          </button>
+          {!voice && (
+            <span className="truncate text-[13px] font-semibold text-[var(--text-title)]">
+              {config?.title ?? '继续对话'}
+            </span>
+          )}
         </div>
-        {config?.scenarioZh && <p className="text-xs dim">{config.scenarioZh}</p>}
         {/* key 保证换场景时面板彻底重建 */}
-        {mode === 'voice' && config ? (
+        {voice ? (
           <VoiceChatLauncher
             key={`v-${config.title}`}
             start={config}
@@ -189,18 +203,19 @@ export function ChatPage() {
     });
 
   return (
-    <div className="space-y-6 fade-up">
-      <header>
-        <h1 className="text-3xl font-semibold">AI 对话</h1>
-        <p className="mt-2 text-sm dim">
-          {mode === 'text'
-            ? '说错也没关系，AI 每次回话都会顺手告诉你更自然的说法，错的会自动进错误本。'
-            : '直接开口说，AI 用语音回你，中间不打断。纠正在你说完之后补上来。'}
-        </p>
-      </header>
+    /*
+      挑场景这一屏是"读四段文字然后选一个"，把它拉到 76rem 只会让每张卡的
+      文字横跨太远。所以它自己收回正文宽度 —— 页面容器放宽是为了通话那一屏。
+    */
+    <div className="mx-auto w-full max-w-[var(--content-w)] space-y-6 fade-up">
+      <PageHeader eyebrow="Practice" title="AI 对话">
+        {mode === 'text'
+          ? '说错也没关系，AI 每次回话都会顺手告诉你更自然的说法，错的会自动进错误本。'
+          : '直接开口说，AI 用语音回你，中间不打断。纠正在你说完之后补上来。'}
+      </PageHeader>
 
-      {/* 分段控件（Segmented Control）：iOS 的标准二选一形态 */}
-      <div className="flex gap-1 rounded-xl bg-[var(--surface-2)] p-1">
+      {/* 二选一：一个描边容器包住两半，选中的那半是纸面（浮起来），另一半是凹底 */}
+      <div className="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--bg-sidebar)] p-1">
         {(
           [
             { k: 'text' as const, zh: '打字练', hint: '每句都纠', Icon: Keyboard },
@@ -213,16 +228,16 @@ export function ChatPage() {
             onClick={() => setMode(k)}
             aria-pressed={mode === k}
             className={cn(
-              'flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-medium',
-              'transition-all duration-300 [transition-timing-function:var(--ease-standard)]',
+              'flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold',
+              'transition-all duration-200 [transition-timing-function:var(--ease-standard)]',
               mode === k
-                ? 'bg-[var(--surface-solid)] shadow-[0_1px_3px_rgba(0,0,0,0.1)]'
-                : 'text-[var(--text-dim)]',
+                ? 'bg-[var(--surface)] text-[var(--text-title)] shadow-[0_1px_2px_rgba(23,62,54,0.10)]'
+                : 'text-[var(--text-dim)] hover:text-[var(--text-secondary)]',
             )}
           >
-            <Icon className="size-4" aria-hidden />
+            <Icon className="size-4" strokeWidth={1.8} aria-hidden />
             {zh}
-            <span className="text-[11px] font-normal dim">{hint}</span>
+            <span className="text-[11px] font-normal opacity-70">{hint}</span>
           </button>
         ))}
       </div>
@@ -230,8 +245,8 @@ export function ChatPage() {
       {/* 自定义话题。填了就按它生成，空着点「换一批」就按今天的词自由发挥 */}
       <Card className="space-y-4">
         <div className="flex items-center gap-2">
-          <Wand2 className="size-4 text-brand-500 dark:text-brand-600" aria-hidden />
-          <h2 className="text-sm font-semibold">想练什么</h2>
+          <Wand2 className="size-4 text-brand-600" strokeWidth={1.8} aria-hidden />
+          <h2 className="text-sm">想练什么</h2>
         </div>
         <div className="flex gap-2">
           <Input
@@ -266,11 +281,11 @@ export function ChatPage() {
       {scenarioError && <ErrorNote message={scenarioError} onRetry={() => void loadScenarios(wish.trim())} />}
 
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">
+        <p className="section-label">
           {loadingScenarios && scenarios !== null ? (
             // 换一批时旧卡片还在（只是压暗），光靠按钮转圈看不出要等多久。
             // 把预期耗时说出来，才不会被当成点了没反应。
-            <span className="dim">正在换一批，大约半分钟</span>
+            <>正在换一批，大约半分钟</>
           ) : (
             '挑一个开始'
           )}
@@ -301,9 +316,9 @@ export function ChatPage() {
           <div className="grid gap-4 sm:grid-cols-2" aria-hidden>
             {[0, 1, 2, 3].map((i) => (
               <div key={i} className="card space-y-4 p-4">
-                <div className="h-4 w-2/5 animate-pulse rounded-lg bg-[var(--surface-2)]" />
-                <div className="h-3 w-3/4 animate-pulse rounded-lg bg-[var(--surface-2)]" />
-                <div className="h-3 w-full animate-pulse rounded-lg bg-[var(--surface-2)]" />
+                <div className="h-4 w-2/5 animate-pulse rounded-md bg-[var(--surface-2)]" />
+                <div className="h-3 w-3/4 animate-pulse rounded-md bg-[var(--surface-2)]" />
+                <div className="h-3 w-full animate-pulse rounded-md bg-[var(--surface-2)]" />
               </div>
             ))}
           </div>
@@ -323,16 +338,15 @@ export function ChatPage() {
               key={`${s.zh}-${s.openingEn.slice(0, 12)}`}
               type="button"
               onClick={() => pick(s)}
-              className={cn(
-                'card p-4 text-left',
-                // hover 微放大 + 投影加深，按下回缩 —— Apple 的卡片交互三段
-                'transition-all duration-300 [transition-timing-function:var(--ease-standard)]',
-                'hover:scale-[1.02] hover:shadow-[var(--shadow-lifted)] active:scale-[0.98]',
-              )}
+              // card-interactive 是全站统一的"可点卡片"：悬停抬起 3px，不缩放
+              className="card card-interactive p-4 text-left"
             >
-              <p className="font-semibold">{s.zh}</p>
+              <p className="font-semibold text-[var(--text-title)]">{s.zh}</p>
               <p className="mt-1 text-xs dim">{s.hint}</p>
-              <p className="en mt-4 text-xs dim">“{s.openingEn}”</p>
+              {/* 开场句是这张卡的"引文"，用衬线斜体，读起来像书里引的一句话 */}
+              <p className="en serif mt-4 text-[13px] italic text-[var(--text-secondary)]">
+                “{s.openingEn}”
+              </p>
               {/* 标出这个场景会考哪些今日词 —— 说出口它们才算 produced */}
               {s.targetTerms.length > 0 && (
                 <p className="mt-4 flex flex-wrap items-center gap-2">
@@ -340,7 +354,7 @@ export function ChatPage() {
                   {s.targetTerms.map((t) => (
                     <span
                       key={t}
-                      className="en rounded-lg bg-brand-500/12 px-2 py-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300"
+                      className="en rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-600 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-300"
                     >
                       {t}
                     </span>
@@ -355,7 +369,7 @@ export function ChatPage() {
       <button
         type="button"
         onClick={() => setShowHistory((s) => !s)}
-        className="flex w-full items-center justify-center gap-2 text-sm text-brand-500 dark:text-brand-600"
+        className="flex w-full items-center justify-center gap-2 text-sm font-semibold text-[var(--link)] hover:underline"
         hidden={mode === 'voice'}
       >
         <History className="size-4" aria-hidden />
@@ -369,17 +383,18 @@ export function ChatPage() {
           ) : history.length === 0 ? (
             <Empty title="还没有聊过" hint="上面挑个场景开始就行" />
           ) : (
-            <ul className="divide-y-[0.5px] divide-[var(--hairline)]">
+            // -mx 把行的悬停底色铺满卡片内边距，否则色块两侧会各留一条缝
+            <ul className="-mx-5 divide-y divide-[var(--hairline)] sm:-mx-6">
               {history.map((c) => (
                 <li key={c.id}>
                   <button
                     type="button"
                     onClick={() => setOpenId(c.id)}
-                    className="flex w-full items-center gap-4 py-3 text-left transition-opacity duration-300 [transition-timing-function:var(--ease-standard)] hover:opacity-60"
+                    className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors duration-200 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-hover)] sm:px-6"
                   >
                     <ChevronRight className="size-4 shrink-0 dim" aria-hidden />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{c.title}</span>
+                      <span className="block truncate text-sm text-[var(--text-title)]">{c.title}</span>
                       <span className="block text-xs dim">{c.created_at?.slice(0, 16)}</span>
                     </span>
                     <Badge>{c.msgs} 条</Badge>

@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
-import { Button, Card, ErrorNote, Input } from '@/components/ui';
+import { Button, Card, ErrorNote, Input, PageHeader } from '@/components/ui';
 import { apiPost } from '@/lib/fetcher';
 import { cn } from '@/lib/cn';
 
@@ -62,15 +62,12 @@ export function Onboarding() {
 
   return (
     <div className="space-y-5 py-6 fade-up">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">先认识一下</h1>
-        <p className="mt-2 text-sm dim">
-          这几项决定 AI 每天给你出什么内容。后面在设置里随时能改。
-        </p>
-      </div>
+      <PageHeader title="先认识一下">
+        这几项决定 AI 每天给你出什么内容。后面在设置里随时能改。
+      </PageHeader>
 
       <Card className="space-y-2">
-        <label htmlFor="name" className="text-sm font-semibold">
+        <label htmlFor="name" className="text-sm font-semibold text-[var(--text-title)]">
           怎么称呼你
         </label>
         <Input
@@ -83,7 +80,7 @@ export function Onboarding() {
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold">现在大概什么水平</h2>
+        <h2 className="text-sm">现在大概什么水平</h2>
         <div className="mt-3 space-y-2">
           {LEVELS.map((l) => (
             <button
@@ -92,17 +89,19 @@ export function Onboarding() {
               onClick={() => setLevel(l.v)}
               aria-pressed={level === l.v}
               className={cn(
-                'w-full rounded-xl border p-3 text-left transition-colors',
+                'w-full rounded-lg border p-3 text-left',
+                'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
                 level === l.v
-                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30'
-                  : 'border-[var(--border)] hover:bg-[var(--surface-2)]',
+                  ? 'border-brand-500 bg-brand-50 dark:border-brand-700 dark:bg-brand-900/30'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)]',
               )}
             >
               <div className="flex items-center gap-2">
-                <span className="en text-xs font-semibold text-brand-600 dark:text-brand-300">
+                {/* CEFR 等级号是标签而不是正文，压成小号等宽感的一小块 */}
+                <span className="en rounded-[3px] bg-[var(--bg-sidebar)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text-secondary)]">
                   {l.v}
                 </span>
-                <span className="text-sm font-medium">{l.zh}</span>
+                <span className="text-sm font-semibold text-[var(--text-title)]">{l.zh}</span>
               </div>
               <p className="mt-0.5 text-xs dim">{l.hint}</p>
             </button>
@@ -111,7 +110,7 @@ export function Onboarding() {
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold">最想解决什么</h2>
+        <h2 className="text-sm">最想解决什么</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           {GOALS.map((g) => (
             <Chip key={g.v} active={goal === g.v} onClick={() => setGoal(g.v)}>
@@ -122,7 +121,7 @@ export function Onboarding() {
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold">平时对什么感兴趣</h2>
+        <h2 className="text-sm">平时对什么感兴趣</h2>
         <p className="mt-1 text-xs dim">选几个，AI 会把练习放到你真在意的场景里，不然背着容易走神。</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {INTERESTS.map((i) => (
@@ -136,10 +135,12 @@ export function Onboarding() {
       <Card className="space-y-5">
         <div>
           <div className="flex items-baseline justify-between">
-            <label htmlFor="minutes" className="text-sm font-semibold">
+            <label htmlFor="minutes" className="text-sm font-semibold text-[var(--text-title)]">
               每天学多久
             </label>
-            <span className="text-sm dim">{dailyMinutes} 分钟</span>
+            <span className="serif text-[17px] font-bold tabular-nums text-[var(--text-title)]">
+              {dailyMinutes} 分钟
+            </span>
           </div>
           <input
             id="minutes"
@@ -149,15 +150,17 @@ export function Onboarding() {
             step={5}
             value={dailyMinutes}
             onChange={(e) => setDailyMinutes(Number(e.target.value))}
-            className="mt-3 w-full accent-brand-600"
+            className="mt-3 w-full accent-[var(--accent-bar)]"
           />
         </div>
         <div>
           <div className="flex items-baseline justify-between">
-            <label htmlFor="nwpd" className="text-sm font-semibold">
+            <label htmlFor="nwpd" className="text-sm font-semibold text-[var(--text-title)]">
               每天几个新词
             </label>
-            <span className="text-sm dim">{newWordsPerDay} 个</span>
+            <span className="serif text-[17px] font-bold tabular-nums text-[var(--text-title)]">
+              {newWordsPerDay} 个
+            </span>
           </div>
           <input
             id="nwpd"
@@ -166,7 +169,7 @@ export function Onboarding() {
             max={20}
             value={newWordsPerDay}
             onChange={(e) => setNewWordsPerDay(Number(e.target.value))}
-            className="mt-3 w-full accent-brand-600"
+            className="mt-3 w-full accent-[var(--accent-bar)]"
           />
           <p className="mt-2 text-xs dim">
             少而牢比多而忘划算。8 个左右，配上复习，一天正好 30 分钟。
@@ -198,10 +201,11 @@ function Chip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+        'rounded-md border px-3 py-1.5 text-[13px]',
+        'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
         active
-          ? 'border-brand-500 bg-brand-600 text-white'
-          : 'border-[var(--border)] hover:bg-[var(--surface-2)]',
+          ? 'border-[var(--accent-bar)] bg-[var(--accent-bar)] font-semibold text-white'
+          : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
       )}
     >
       {children}

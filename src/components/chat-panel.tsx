@@ -143,12 +143,17 @@ export function ChatPanel({
           return (
             <div key={m.id} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
               <div className={cn('max-w-[85%] space-y-1.5', m.role === 'user' && 'items-end')}>
+                {/**
+                 * 气泡。自己说的话用实心主色，AI 说的用纸面 + 描边 ——
+                 * AI 的话是要精读的学习材料，实色底会压住文字，纸面读起来更省力。
+                 * 靠自己那侧的圆角收一档（rounded-br/bl-md），气泡就有了朝向。
+                 */}
                 <div
                   className={cn(
                     'rounded-2xl px-3.5 py-2.5',
                     m.role === 'user'
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-[var(--surface-2)] text-[var(--text)]',
+                      ? 'rounded-br-md bg-brand-500 text-white'
+                      : 'rounded-bl-md border border-[var(--border)] bg-[var(--surface)] text-[var(--text-body)]',
                   )}
                 >
                   <div className="flex items-start gap-1.5">
@@ -165,7 +170,7 @@ export function ChatPanel({
                           return n;
                         })
                       }
-                      className="mt-1 text-[11px] dim hover:underline"
+                      className="mt-1.5 text-[11.5px] text-[var(--text-dim)] hover:text-[var(--link)] hover:underline"
                     >
                       {showZh.has(m.id) ? m.translationZh : '看中文'}
                     </button>
@@ -175,13 +180,13 @@ export function ChatPanel({
                 {corr && (
                   <div
                     className={cn(
-                      'rounded-xl px-3 py-2 text-xs',
+                      'rounded-xl border px-3 py-2 text-xs leading-relaxed',
                       corr.has_issue
-                        ? 'bg-warm-50 text-warm-900 dark:bg-warm-900/30 dark:text-warm-100'
-                        : 'bg-brand-50 text-brand-900 dark:bg-brand-900/25 dark:text-brand-100',
+                        ? 'border-warm-200 bg-warm-50 text-warm-900 dark:border-warm-800 dark:bg-warm-900/30 dark:text-warm-100'
+                        : 'border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-800 dark:bg-brand-900/25 dark:text-brand-100',
                     )}
                   >
-                    <div className="flex items-center gap-1.5 font-medium">
+                    <div className="flex items-center gap-1.5 font-semibold">
                       {corr.has_issue ? (
                         <>
                           <Wand2 className="size-3.5" aria-hidden /> 可以这么说
@@ -213,13 +218,13 @@ export function ChatPanel({
                 )}
 
                 {m.role === 'assistant' && m.feedback?.suggestion_en && (
-                  <div className="flex items-start gap-1.5 rounded-xl border border-dashed border-[var(--border)] px-3 py-2 text-xs">
+                  <div className="flex items-start gap-1.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--bg-sidebar)] px-3 py-2 text-xs">
                     <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-warm-500" aria-hidden />
-                    <span className="en flex-1">{m.feedback.suggestion_en}</span>
+                    <span className="en flex-1 text-[var(--text-body)]">{m.feedback.suggestion_en}</span>
                     <button
                       type="button"
                       onClick={() => setText(m.feedback!.suggestion_en!)}
-                      className="shrink-0 text-brand-600 hover:underline dark:text-brand-300"
+                      className="shrink-0 font-semibold text-[var(--link)] hover:underline"
                     >
                       照着说
                     </button>
@@ -231,7 +236,7 @@ export function ChatPanel({
         })}
         {sending && (
           <div className="flex justify-start">
-            <div className="rounded-2xl bg-[var(--surface-2)] px-3.5 py-2.5">
+            <div className="rounded-2xl rounded-bl-md border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5">
               <Spinner label="在想怎么回你" />
             </div>
           </div>
@@ -240,10 +245,11 @@ export function ChatPanel({
       </div>
 
       {error && <ErrorNote message={error} />}
-      {stt.error && <p className="text-xs text-warm-600 dark:text-warm-400">{stt.error}</p>}
+      {stt.error && <p className="text-xs text-warm-600 dark:text-warm-300">{stt.error}</p>}
 
+      {/* 输入区吸底。上边一条 hairline，否则上面的气泡会像是直接压在输入框上。 */}
       <form
-        className="sticky bottom-0 flex items-end gap-2 bg-[var(--bg)] pt-1"
+        className="sticky bottom-0 flex items-end gap-2 border-t border-[var(--hairline)] bg-[var(--bg)] pt-3"
         onSubmit={(e) => {
           e.preventDefault();
           send();
@@ -272,7 +278,17 @@ export function ChatPanel({
           }}
           placeholder={stt.supported ? '说出来，或者打字' : '用英文打字回复'}
           aria-label="你的回复"
-          className="en max-h-32 min-h-10 flex-1 resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm focus:border-brand-400 focus:outline-none"
+          // 这里不能直接用 <Textarea>：它要能自增高、有 max-h 上限，还要跟按钮同一行对齐。
+          // 描边/聚焦环手抄一份 fieldBase，保持和表单里的输入框一致。
+          className={cn(
+            'en max-h-32 min-h-11 flex-1 resize-none rounded-xl px-3.5 py-3',
+            'border border-[var(--border-control)] bg-[var(--surface)]',
+            // 移动端保持 16px，否则 Safari 会自动放大页面
+            'text-base sm:text-sm',
+            'text-[var(--text-body)] placeholder:text-[var(--text-faint)]',
+            'transition-[border-color,box-shadow] duration-150 focus:outline-none',
+            'focus:border-brand-500 focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand-400)_22%,transparent)]',
+          )}
         />
         <Button type="submit" disabled={!text.trim() || sending} className="shrink-0" aria-label="发送">
           <Send className="size-4" aria-hidden />

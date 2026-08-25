@@ -63,12 +63,13 @@ export function DayBars({
             <div key={d.day} className="group relative min-w-0 flex-1">
               <div
                 className={cn(
-                  'w-full rounded-t-[3px] transition-colors',
+                  'w-full rounded-t-[2px] transition-colors duration-200',
+                  '[transition-timing-function:var(--ease-standard)]',
                   empty
-                    ? 'bg-[var(--surface-2)]'
+                    ? 'bg-[var(--border)]'
                     : warn
                       ? 'bg-warm-400 group-hover:bg-warm-500'
-                      : 'bg-brand-400 group-hover:bg-brand-600',
+                      : 'bg-[var(--accent-bar)] group-hover:bg-brand-600',
                 )}
                 style={{ height: `${h}px` }}
               />
@@ -76,8 +77,8 @@ export function DayBars({
               <span
                 className={cn(
                   'pointer-events-none absolute -top-8 left-1/2 z-10 hidden -translate-x-1/2',
-                  'whitespace-nowrap rounded-md bg-[var(--text)] px-2 py-1',
-                  'text-[11px] text-[var(--surface)] shadow-sm group-hover:block',
+                  'whitespace-nowrap rounded-md bg-[var(--text-title)] px-2 py-1',
+                  'text-[11px] tabular-nums text-[var(--surface)] shadow-[var(--shadow-lifted)] group-hover:block',
                 )}
               >
                 {d.day.slice(5)}
@@ -89,7 +90,7 @@ export function DayBars({
       </div>
 
       {(leftLabel || rightLabel) && (
-        <div className="mt-1.5 flex justify-between text-[11px] dim">
+        <div className="mt-2 flex justify-between text-[11px] tabular-nums dim">
           <span>{leftLabel}</span>
           <span>{rightLabel}</span>
         </div>
@@ -117,7 +118,7 @@ export function StackedBar({
   return (
     <div
       className={cn(
-        'flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-[var(--surface-2)]',
+        'flex h-2 w-full gap-px overflow-hidden rounded-sm bg-[var(--surface-2)]',
         className,
       )}
       role="img"
@@ -129,7 +130,7 @@ export function StackedBar({
             s.value > 0 && (
               <div
                 key={s.label}
-                className={cn('h-full first:rounded-l-full last:rounded-r-full', s.className)}
+                className={cn('h-full first:rounded-l-sm last:rounded-r-sm', s.className)}
                 style={{ width: `${(s.value / total) * 100}%` }}
               />
             ),

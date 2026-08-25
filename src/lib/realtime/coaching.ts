@@ -91,6 +91,12 @@ export async function processTurn(input: {
       maxTokens: 800,
       temperature: 0.3,
       toolName: 'emit_coaching',
+      /*
+       * 口语纠错走 fast 角色：这一路是语音回合的旁路，学生已经在说下一句了，
+       * 纠正每晚到一秒，界面上的红字就越对不上他刚说的那句。
+       * 用哪个模型由 AI_FAST_* 决定，配一个响应快的比配一个聪明的划算。
+       */
+      role: 'fast',
     });
     result = { correction: data.correction, usedTerms: data.used_target_words };
   } catch (err) {

@@ -51,7 +51,6 @@ const EXPECTED = [
   'user_words',
   'users',
   'words',
-  'writings',
 ];
 
 try {

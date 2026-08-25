@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { MessagesSquare, Target, Volume2 } from 'lucide-react';
+import { MessagesSquare, Target } from 'lucide-react';
 import { Badge, Button, Card } from '@/components/ui';
-import { Speak, StageIntro } from './shared';
+import { ColumnLabel, Speak, Split, StageIntro, StickyColumn } from './shared';
 import { ChatPanel, type StartConfig } from '@/components/chat-panel';
 import { ShadowCard } from '@/components/shadow-card';
 import type { StageProps } from './types';
@@ -16,7 +16,11 @@ import { cn } from '@/lib/cn';
  * 认得出来不算。
  */
 export function SpeakingStage({ payload, meta, onDone, onRegenerate, submitting }: StageProps<SpeakingData>) {
-  const [tab, setTab] = useState<'shadow' | 'talk'>('shadow');
+  /**
+   * 对话是懒启动的：ChatPanel 一挂载就会 POST /api/chat 建会话并让 AI 说第一句，
+   * 所以不能和跟读一起常驻 —— 那样每个路过的人都会白开一段对话。
+   */
+  const [talking, setTalking] = useState(false);
   const [usedTerms, setUsedTerms] = useState<Set<string>>(new Set());
   const [turns, setTurns] = useState(0);
   const startedAt = useMemo(() => Date.now(), []);
@@ -50,105 +54,104 @@ export function SpeakingStage({ payload, meta, onDone, onRegenerate, submitting 
     <div className="space-y-4">
       <StageIntro>{payload.scenario_zh}</StageIntro>
 
-      <Card>
-        <div className="flex items-center gap-2">
-          <Target className="size-4 text-brand-500" aria-hidden />
-          <p className="text-sm font-semibold">这几个词要真说出来</p>
-        </div>
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {mustUse.map((t) => {
-            const used = usedTerms.has(t.toLowerCase());
-            return (
-              <span
-                key={t}
-                className={cn(
-                  'en inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
-                  used
-                    ? 'bg-brand-500 text-white'
-                    : 'border border-dashed border-[var(--border)] text-[var(--text-dim)]',
-                )}
-              >
-                {used && '✓ '}
-                {t}
-              </span>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-xs dim">
-          用出来的词才算掌握。只是"看着眼熟"不会推进进度。
-        </p>
-      </Card>
+      {/*
+        原来这里是个「先跟读 / 真实对话」分段控件，一次只能看一边。
+        但跟读句型本来就是对话时的参考材料 —— 分栏之后左边常驻句型和目标词，
+        右边聊，说不出来抬眼就能抄一句，不用切回去。
+      */}
+      <Split
+        aside={
+          <StickyColumn>
+            <ColumnLabel>先练顺这些</ColumnLabel>
+            <Card>
+              <div className="flex items-center gap-2">
+                <Target className="size-4 text-brand-500" aria-hidden />
+                <p className="text-sm font-semibold text-[var(--text-title)]">这几个词要真说出来</p>
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {mustUse.map((t) => {
+                  const used = usedTerms.has(t.toLowerCase());
+                  return (
+                    <span
+                      key={t}
+                      className={cn(
+                        'en inline-flex items-center gap-1 rounded-[4px] border px-2 py-1 text-xs',
+                        'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
+                        used
+                          ? 'border-[var(--success)] bg-[color-mix(in_srgb,var(--success)_12%,var(--surface))] font-semibold text-[var(--success)]'
+                          : 'border-dashed border-[var(--border)] text-[var(--text-faint)]',
+                      )}
+                    >
+                      {used && '✓ '}
+                      {t}
+                    </span>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs dim">
+                用出来的词才算掌握。只是"看着眼熟"不会推进进度。
+              </p>
+            </Card>
 
-      <div className="flex gap-2 rounded-xl bg-[var(--surface-2)] p-1">
-        {(
-          [
-            { k: 'shadow' as const, zh: '先跟读', Icon: Volume2 },
-            { k: 'talk' as const, zh: '真实对话', Icon: MessagesSquare },
-          ]
-        ).map(({ k, zh, Icon }) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setTab(k)}
-            aria-pressed={tab === k}
-            className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition-colors',
-              tab === k ? 'bg-[var(--surface)] shadow-sm' : 'text-[var(--text-dim)]',
-            )}
-          >
-            <Icon className="size-4" aria-hidden />
-            {zh}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'shadow' ? (
-        <div className="space-y-3">
-          <p className="text-xs dim">
-            这些句型在对话里能直接用上。念一遍，看哪个词没被听清。
-          </p>
-          {(payload.useful_phrases ?? []).map((p, i) => (
-            <ShadowCard key={i} target={p.en} zh={p.zh} sessionId={meta.sessionId} />
-          ))}
-          <Button variant="outline" className="w-full" onClick={() => setTab('talk')}>
-            练顺了，去对话
-          </Button>
-        </div>
-      ) : (
+            <p className="text-xs dim">这些句型在对话里能直接用上。念一遍，看哪个词没被听清。</p>
+            {(payload.useful_phrases ?? []).map((p, i) => (
+              <ShadowCard key={i} target={p.en} zh={p.zh} sessionId={meta.sessionId} />
+            ))}
+          </StickyColumn>
+        }
+      >
+        <ColumnLabel>和 AI 对话</ColumnLabel>
         <Card>
           <div className="flex items-start justify-between gap-2">
             <div>
               <Badge tone="brand">AI 扮演</Badge>
-              <p className="en mt-1.5 text-sm">{payload.ai_role}</p>
+              <p className="en mt-1.5 text-sm font-medium text-[var(--text-title)]">{payload.ai_role}</p>
             </div>
             <Speak text={payload.opening_en} />
           </div>
-          <div className="mt-3 border-t border-[var(--border)] pt-3">
-            <ChatPanel
-              start={startConfig}
-              compact
-              onTurn={({ usedWords }) => {
-                setTurns((n) => n + 1);
-                if (usedWords.length) {
-                  setUsedTerms((s) => {
-                    const n = new Set(s);
-                    for (const w of usedWords) n.add(w.toLowerCase());
-                    return n;
-                  });
-                }
-              }}
-            />
+          <div className="mt-3 border-t border-[var(--hairline)] pt-3">
+            {talking ? (
+              <ChatPanel
+                start={startConfig}
+                compact
+                onTurn={({ usedWords }) => {
+                  setTurns((n) => n + 1);
+                  if (usedWords.length) {
+                    setUsedTerms((s) => {
+                      const n = new Set(s);
+                      for (const w of usedWords) n.add(w.toLowerCase());
+                      return n;
+                    });
+                  }
+                }}
+              />
+            ) : (
+              <div className="space-y-3 py-4 text-center">
+                <MessagesSquare className="mx-auto size-7 text-[var(--text-faint)]" aria-hidden />
+                <p className="text-sm dim">左边的句型念顺了就可以开始。说错没关系，AI 会顺手改。</p>
+                <Button onClick={() => setTalking(true)}>开始对话</Button>
+              </div>
+            )}
           </div>
         </Card>
-      )}
 
-      <Button className="w-full" onClick={finish} loading={submitting}>
-        {turns === 0 ? '跳过对话，去写作' : `聊了 ${turns} 轮，去写作`}
-      </Button>
+        {/*
+          口语是今天最后一个环节，所以这个按钮是"收工"，不再是"去写作"。
+          没聊过就压成次要样式：真正该点的是上面的开始对话，不能让跳过的按钮更显眼。
+        */}
+        <Button
+          className="w-full"
+          variant={turns === 0 ? 'outline' : 'primary'}
+          onClick={finish}
+          loading={submitting}
+        >
+          {turns === 0 ? '跳过对话，完成今天' : `聊了 ${turns} 轮，完成今天`}
+        </Button>
 
-      <button type="button" onClick={onRegenerate} className="w-full text-center text-xs dim hover:underline">
-        换个场景
-      </button>
+        <button type="button" onClick={onRegenerate} className="w-full text-center text-xs dim hover:underline">
+          换个场景
+        </button>
+      </Split>
     </div>
   );
 }

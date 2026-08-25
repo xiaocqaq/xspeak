@@ -1,5 +1,11 @@
 /** 全站共用的领域类型。 */
 
+/*
+ * 顺序就是每天走的顺序，最后一个环节走完算今天完成。
+ * 原来末尾还有一个 writing（写作批改），已经整条去掉 ——
+ * 手机上打一段英文的成本太高，实际没人在这一步停下来写，
+ * 收尾改由 speaking 承担。
+ */
 export const STAGES = [
   'warmup',
   'newwords',
@@ -7,7 +13,6 @@ export const STAGES = [
   'listening',
   'reading',
   'speaking',
-  'writing',
 ] as const;
 
 export type Stage = (typeof STAGES)[number];
@@ -18,8 +23,7 @@ export const STAGE_META: Record<Stage, { zh: string; en: string; minutes: number
   grammar: { zh: '语法', en: 'Grammar', minutes: 5, icon: 'ruler' },
   listening: { zh: '听力', en: 'Listening', minutes: 4, icon: 'headphones' },
   reading: { zh: '阅读', en: 'Reading', minutes: 4, icon: 'book-open' },
-  speaking: { zh: '口语', en: 'Speaking', minutes: 4, icon: 'mic' },
-  writing: { zh: '写作', en: 'Writing', minutes: 2, icon: 'pen-line' },
+  speaking: { zh: '口语', en: 'Speaking', minutes: 6, icon: 'mic' },
 };
 
 export type SpeechPace = 'slow' | 'normal' | 'fast';

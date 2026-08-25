@@ -61,6 +61,8 @@ export async function POST(req: Request) {
       // 场景要多样，温度给高一点；换一批换出雷同的东西没意义
       temperature: 0.95,
       toolName: 'emit_scenarios',
+      // 用户点了「换一批」就在等着，别用最慢的那个模型
+      role: 'chat',
     });
 
     // AI 挑的目标词要映射回 id 才能落库计数。它偶尔会写变形或凭空造词，

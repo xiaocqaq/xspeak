@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AI_VOICE_IDS, PACE_KEYS, pace } from '@/lib/voice-options';
+import { voiceConfig, MISSING_KEY_MESSAGE } from '@/lib/voice/config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,11 +11,8 @@ const Body = z.object({
   text: z.string().max(300).default('Hi! Nice to meet you. What do you usually do on weekends?'),
 });
 
-const TTS_BASE = process.env.STEP_TTS_URL?.trim() || 'https://api.stepfun.com/step_plan/v1/audio/speech';
-const TTS_MODEL = 'stepaudio-2.5-tts';
-
 /**
- * 音色试听。转发到 StepFun 的 TTS 接口，返回 mp3。
+ * 音色试听。转发到上游的 TTS 接口（地址和模型见 @/lib/voice/config），返回 mp3。
  *
  * 为什么试听走 TTS 而不是 realtime：
  * 1. realtime 建连本身有成本，而且连续快速建连会被上游限流 —— 用户连点几个音色
@@ -25,12 +23,9 @@ const TTS_MODEL = 'stepaudio-2.5-tts';
  * 音色特征一致，但语气和呼吸感不同。用来选音色够了。
  */
 export async function POST(req: Request) {
-  const apiKey = process.env.STEP_API_KEY?.trim();
-  if (!apiKey) {
-    return Response.json(
-      { ok: false, error: '服务端缺少 STEP_API_KEY，请在 .env.local 里配置。' },
-      { status: 500 },
-    );
+  const cfg = voiceConfig();
+  if (!cfg.apiKey) {
+    return Response.json({ ok: false, error: MISSING_KEY_MESSAGE }, { status: 500 });
   }
 
   let input: z.infer<typeof Body>;
@@ -47,14 +42,14 @@ export async function POST(req: Request) {
   }
 
   try {
-    const upstream = await fetch(TTS_BASE, {
+    const upstream = await fetch(cfg.ttsUrl, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${cfg.apiKey}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: TTS_MODEL,
+        model: cfg.ttsModel,
         input: input.text,
         voice: input.voice,
         response_format: 'mp3',

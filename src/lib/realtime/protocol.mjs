@@ -9,13 +9,13 @@
  *
  * ── 架构 ──
  *
- *   浏览器 ──ws://本机/api/realtime──▶ server.mjs ──wss://api.stepfun.com──▶ StepFun
+ *   浏览器 ──ws://本机/api/realtime──▶ server.mjs ──wss://上游──▶ 语音服务商
  *
- * 为什么要中转：浏览器的 WebSocket 不能带自定义请求头，而 StepFun 唯一支持的
+ * 为什么要中转：浏览器的 WebSocket 不能带自定义请求头，而这类服务唯一支持的
  * 浏览器侧鉴权是把 key 塞进子协议 —— 那等于把 API key 明文发给客户端。
- * 中转之后 key 只留在服务端。
+ * 中转之后 key 只留在服务端。上游地址和模型名见 ../voice/config.mjs。
  *
- * ── 两个实测硬约束（和官方文档不一致，改之前先跑 scripts/probe-realtime.mjs）──
+ * ── 两个实测硬约束（StepFun 实测，和官方文档不一致，改之前先跑 scripts/probe-realtime.mjs）──
  *
  * 1. 服务地址是 `/step_plan/v1/realtime`，不是文档写的 `/v1/realtime`（后者连不上，
  *    而且那个 base 的配额已用尽）。
@@ -30,19 +30,13 @@ export const SAMPLE_RATE = 16_000;
 /** 一片音频的时长。100ms @16k mono s16le = 3200 字节。 */
 export const CHUNK_MS = 100;
 
-export const REALTIME_MODEL = 'stepaudio-2.5-realtime';
-
-/** 转写学生原话用的 ASR 模型，写在 session.update 的 input_audio_transcription 里。 */
-export const ASR_MODEL = 'stepaudio-2.5-asr';
-
-/** Realtime 的默认音色。和 TTS 接口的音色名不通用。 */
-export const DEFAULT_VOICE = 'jingdiannvsheng';
-
 /** 中转层监听的 WebSocket 路径。 */
 export const REALTIME_PATH = '/api/realtime';
 
-/** 上游默认地址，可用 STEP_REALTIME_URL 覆盖。 */
-export const UPSTREAM_URL = 'wss://api.stepfun.com/step_plan/v1/realtime';
+/*
+ * 上游地址、模型名、默认音色都搬到 ../voice/config.mjs 了 ——
+ * 那些是「当前用哪家服务商」，会随环境变量变；这里只留协议本身的常量。
+ */
 
 /** 上游音频格式，session.update 时原样发过去。 */
 export const UPSTREAM_AUDIO = {

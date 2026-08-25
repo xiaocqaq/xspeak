@@ -4,16 +4,14 @@
  * 运行时常量在同目录的 protocol.mjs 里 —— 自定义 server 跑在 Next 编译流程之外，
  * 用不了 `@/` 别名，所以常量放 .mjs 让两边共享，这里只补类型并原样转出。
  * 架构说明和实测约束都写在 protocol.mjs 的头注释里。
+ *
+ * 服务商相关的东西（上游地址、模型名、默认音色）不在这里，在 @/lib/voice/config。
  */
 
 export {
   SAMPLE_RATE,
   CHUNK_MS,
-  REALTIME_MODEL,
-  ASR_MODEL,
-  DEFAULT_VOICE,
   REALTIME_PATH,
-  UPSTREAM_URL,
   UPSTREAM_AUDIO,
   buildInstructions,
 } from './protocol.mjs';

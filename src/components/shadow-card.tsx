@@ -54,13 +54,13 @@ export function ShadowCard({
   const stt = useStt({ continuous: false, onFinal: submit });
 
   return (
-    <div className="rounded-xl border border-[var(--border)] p-4">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="flex items-start gap-2">
-        <p className="en flex-1 text-[15px]">{target}</p>
+        <p className="en flex-1 text-[16px] font-medium leading-relaxed text-[var(--text-title)]">{target}</p>
         <Speak text={target} />
         <Speak text={target} slow label="慢速朗读" />
       </div>
-      {zh && <p className="mt-1 text-xs dim">{zh}</p>}
+      {zh && <p className="mt-1.5 text-xs dim">{zh}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {stt.supported && !manual ? (
@@ -99,8 +99,8 @@ export function ShadowCard({
           在听… <span className="en">{stt.interim}</span>
         </p>
       )}
-      {stt.error && <p className="mt-2 text-xs text-warm-600 dark:text-warm-400">{stt.error}</p>}
-      {err && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{err}</p>}
+      {stt.error && <p className="mt-2 text-xs text-warm-600 dark:text-warm-300">{stt.error}</p>}
+      {err && <p className="mt-2 text-xs text-[var(--danger)]">{err}</p>}
 
       {manual && (
         <form
@@ -113,7 +113,13 @@ export function ShadowCard({
         >
           <input
             name="t"
-            className="en h-9 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm"
+            className={cn(
+              'en h-9 flex-1 rounded-lg px-3 text-sm',
+              'border border-[var(--border-control)] bg-[var(--surface)] text-[var(--text-body)]',
+              'placeholder:text-[var(--text-faint)]',
+              'transition-[border-color,box-shadow] duration-150 focus:outline-none',
+              'focus:border-brand-500 focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand-400)_22%,transparent)]',
+            )}
             placeholder="把这句话打出来"
             aria-label="手打这句话"
           />
@@ -126,25 +132,33 @@ export function ShadowCard({
       {result && (
         <div className="mt-3 fade-up">
           <div className="flex items-center gap-3">
+            {/* 分数牌和写作批改那块同形：描边 + 衬线数字，不用实心圆 */}
             <div
               className={cn(
-                'grid size-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white',
-                result.score >= 85 ? 'bg-brand-500' : result.score >= 65 ? 'bg-warm-500' : 'bg-red-500',
+                'grid size-11 shrink-0 place-items-center rounded-lg border',
+                result.score >= 85
+                  ? 'border-[color-mix(in_srgb,var(--success)_40%,transparent)] bg-[color-mix(in_srgb,var(--success)_10%,var(--surface))] text-[var(--success)]'
+                  : result.score >= 65
+                    ? 'border-warm-300 bg-warm-50 text-warm-600 dark:border-warm-800 dark:bg-warm-900/25 dark:text-warm-300'
+                    : 'border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_9%,var(--surface))] text-[var(--danger)]',
               )}
             >
-              {result.score}
+              <span className="serif text-[19px] font-bold leading-none tabular-nums">{result.score}</span>
             </div>
-            <p className="flex-1 text-xs dim">{result.summaryZh}</p>
+            <p className="flex-1 text-xs leading-relaxed dim">{result.summaryZh}</p>
           </div>
           <p className="mt-2 flex flex-wrap gap-x-1.5 gap-y-1">
             {result.words.map((w, i) => (
               <span
                 key={i}
                 className={cn(
-                  'en rounded px-1 text-sm',
-                  w.status === 'ok' && 'text-brand-600 dark:text-brand-400',
-                  w.status === 'close' && 'bg-warm-100 text-warm-800 dark:bg-warm-900/40 dark:text-warm-200',
-                  w.status === 'miss' && 'bg-red-100 text-red-800 line-through dark:bg-red-900/40 dark:text-red-200',
+                  'en rounded-[3px] px-1 text-[15px]',
+                  // 听清了就是普通正文色（不奖励"正常"），只有听不清的才染色
+                  w.status === 'ok' && 'text-[var(--text-body)]',
+                  w.status === 'close' &&
+                    'bg-warm-100 text-warm-800 underline decoration-warm-500 decoration-dotted underline-offset-[3px] dark:bg-warm-900/40 dark:text-warm-200',
+                  w.status === 'miss' &&
+                    'bg-[color-mix(in_srgb,var(--danger)_12%,var(--surface))] text-[var(--danger)] line-through',
                 )}
                 title={
                   w.status === 'ok'

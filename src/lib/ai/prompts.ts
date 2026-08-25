@@ -139,52 +139,14 @@ export function readingPrompt(ctx: Ctx, targetWords: string[]): string {
 
 export function speakingPrompt(ctx: Ctx, targetWords: string[]): string {
   return [
-    `今天的主题是「${ctx.themeZh}」（${ctx.themeEn}）。这是口语环节，学生要和你真的对话。`,
+    `今天的主题是「${ctx.themeZh}」（${ctx.themeEn}）。这是口语环节，也是今天的收尾，学生要和你真的对话。`,
     '',
     `设计一个角色扮演场景，让学生必须用上这些词才能完成任务：${targetWords.join(', ')}。`,
     '',
     '要求：',
-    '1. scenario_zh 要给学生一个明确的任务目标（例如"点一杯不太浓的大杯咖啡并问能不能续杯"）。',
+    '1. scenario_zh 要给学生一个明确的任务目标（例如"点一杯不太浓的大杯咖啡并问能不能续杯"），两三句话说完，不要超过 200 字。',
     '2. opening_en 是你作为角色说的第一句，要简单、自然、能让学生接得上话。',
     '3. useful_phrases 给学生卡住时能照着说的句型，要能直接用在这个场景。',
-  ].join('\n');
-}
-
-export function writingPrompt(ctx: Ctx, targetWords: string[]): string {
-  return [
-    `今天的主题是「${ctx.themeZh}」（${ctx.themeEn}）。这是写作环节，也是今天的收尾。`,
-    '',
-    `出一个小写作任务，要求学生用上：${targetWords.join(', ')}。`,
-    '',
-    '要求：',
-    `1. 任务量控制在 3-5 句，学生水平是 ${ctx.learner.level}，别出难度过高的题。`,
-    '2. prompt_zh 要说清写几句、写什么、必须用哪些词。',
-    '3. sample_en 是参考答案，必须是这个水平的学生真能写出来的，不要炫技。',
-  ].join('\n');
-}
-
-export function correctionPrompt(
-  l: Learner,
-  promptEn: string,
-  text: string,
-  mustUse: string[],
-): string {
-  return [
-    '批改学生的英文写作。',
-    '',
-    `题目：${promptEn}`,
-    mustUse.length ? `要求用到的词：${mustUse.join(', ')}` : '',
-    '',
-    '学生写的：',
-    '"""',
-    text,
-    '"""',
-    '',
-    '要求：',
-    '1. summary_zh 先具体指出写得好的地方（不要泛泛地夸），再说主要问题。',
-    '2. issues 里 wrong 字段必须是学生原文里的准确子串，方便前端高亮。',
-    `3. corrected_en 保持学生的原意和大致句式，只改错和明显不自然的地方。不要替他重写成 ${l.level} 之上的漂亮文章。`,
-    '4. 评分标准：能表达清楚意思就有 70 分以上；语法错误多但可懂 50-70；跑题或无法理解才低于 50。',
   ].join('\n');
 }
 

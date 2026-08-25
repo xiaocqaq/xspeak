@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, Menu, PartyPopper, RefreshCw } from 'lucide-react';
+import { Menu, PartyPopper, RefreshCw } from 'lucide-react';
 import { Button, Card, ErrorNote } from '@/components/ui';
 import { StageLoading } from './shared';
 import { StageDrawer, StageSidebar } from './stage-nav';
@@ -13,7 +13,6 @@ import { GrammarStage } from './grammar';
 import { ListeningStage } from './listening';
 import { ReadingStage } from './reading';
 import { SpeakingStage } from './speaking';
-import { WritingStage } from './writing';
 import type { ReviewBody, StageMeta } from './types';
 import { apiGet, apiPost } from '@/lib/fetcher';
 import { STAGES, STAGE_META, type Stage } from '@/lib/types';
@@ -21,7 +20,7 @@ import { cn } from '@/lib/cn';
 
 type StageResponse = StageMeta & { payload: unknown };
 
-/** 七个环节串成一条线。每个环节做完提交学习数据，然后自动进下一个。 */
+/** 六个环节串成一条线。每个环节做完提交学习数据，然后自动进下一个。 */
 export function SessionRunner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -117,11 +116,15 @@ export function SessionRunner() {
 
   return (
     /**
-     * 两列：左侧环节导航常驼（宽屏），右侧答题区。
-     * 答题区自己有宽度上限：英文句子一行超过 ~70 字符就难读，
-     * 不能因为屏幕宽就把题目拉到 900px。
+     * 环节侧栏是 fixed 的（和全站导航同一个框），所以这里只负责主内容区：
+     * 宽屏时整体右移一个侧栏宽度。
+     *
+     * 这里放宽到 76rem，但**不是**把单列拉宽 —— 英文一行超过 ~70 字符就难读。
+     * 多出来的横向空间给环节自己去开第二列（见 shared 里的 Split）：
+     * 左边材料、右边动手，每列还是 ~36rem。1280px 以下环节会自动收回单列，
+     * 这时容器宽度被内容撑不满，视觉上仍是居中的一栏。
      */
-    <div className="flex gap-8">
+    <div className="lg:pl-[var(--sidebar-w)]">
       <StageSidebar current={stage} done={data?.stagesDone ?? []} onPick={setStage} />
       <StageDrawer
         open={navOpen}
@@ -131,27 +134,24 @@ export function SessionRunner() {
         onPick={setStage}
       />
 
-      <div className="min-w-0 flex-1 space-y-6 md:max-w-[34rem]">
+      <div className="mx-auto min-w-0 max-w-[36rem] space-y-6 xl:max-w-[76rem]">
         <header className="flex items-center gap-2">
-          {/* 手机上这个按钮开抽屉；宽屏上侧栅已经常驼，改成回首页 */}
+          {/* 手机上开抽屉；宽屏侧栏已常驻，这个按钮就不需要了 */}
           <button
             type="button"
             onClick={() => setNavOpen(true)}
             aria-label="切换环节"
-            className="-ml-2 rounded-lg p-2 text-brand-500 transition-colors duration-300 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-2)] md:hidden dark:text-brand-600"
+            className={cn(
+              'grid size-8 shrink-0 place-items-center rounded-lg lg:hidden',
+              'border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]',
+              'transition-colors hover:bg-[var(--surface-hover)] hover:text-brand-600',
+            )}
           >
-            <Menu className="size-5" aria-hidden />
+            <Menu className="size-[15px]" strokeWidth={1.8} aria-hidden />
           </button>
-          <Link
-            href="/"
-            aria-label="回首页"
-            className="-ml-2 hidden rounded-lg p-2 text-brand-500 transition-colors duration-300 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-2)] md:block dark:text-brand-600"
-          >
-            <ArrowLeft className="size-5" aria-hidden />
-          </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-semibold">{info.zh}</h1>
-            <p className="truncate text-xs dim">
+            <h1 className="truncate text-[22px]">{info.zh}</h1>
+            <p className="mt-0.5 truncate text-xs dim">
               {data?.themeZh ?? '今日主题'} · 约 {info.minutes} 分钟
             </p>
           </div>
@@ -160,13 +160,17 @@ export function SessionRunner() {
             onClick={() => load(stage, true)}
             disabled={loading}
             aria-label="重新生成这一环节"
-            className="-mr-2 rounded-lg p-2 text-[var(--text-dim)] transition-colors duration-300 [transition-timing-function:var(--ease-standard)] hover:bg-[var(--surface-2)] disabled:opacity-40"
+            className={cn(
+              'grid size-8 shrink-0 place-items-center rounded-lg text-[var(--text-dim)]',
+              'transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
+              'disabled:opacity-40',
+            )}
           >
             <RefreshCw className={cn('size-4', loading && 'animate-spin')} aria-hidden />
           </button>
         </header>
         {/*
-          原来这里有一条七段进度细线。有了侧栅/抽屉后它是重复信息，
+          原来这里有一条逐段进度细线。有了侧栅/抽屉后它是重复信息，
           而且两个地方都能切环节反而让人迟疑该点哪个，所以去掉了。
         */}
 
@@ -221,8 +225,6 @@ function StageBody({
       return <ReadingStage {...props} payload={data.payload as never} />;
     case 'speaking':
       return <SpeakingStage {...props} payload={data.payload as never} />;
-    case 'writing':
-      return <WritingStage {...props} payload={data.payload as never} />;
   }
 }
 
@@ -240,29 +242,25 @@ function Finished() {
 
   return (
     <div className="flex flex-col items-center gap-5 py-16 text-center fade-up">
-      <PartyPopper className="size-12 text-brand-500" aria-hidden />
+      <PartyPopper className="size-10 text-[var(--accent-bar)]" aria-hidden />
       <div>
-        <h1 className="text-2xl font-semibold">今天的 30 分钟走完了</h1>
-        <p className="mt-2 text-sm dim">
+        {/* h1 本身已是衬线 700，这里只给字号 */}
+        <h1 className="text-[26px] leading-snug">今天的 30 分钟走完了</h1>
+        <p className="mt-2.5 text-sm leading-relaxed dim">
           明天这些词会换成新句子再来一次 —— 换了语境还认得，才是真记住了。
         </p>
       </div>
 
       {stats && (
         <Card className="w-full">
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div>
-              <p className="text-2xl font-semibold">{stats.streak}</p>
-              <p className="text-xs dim">连续天数</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold">{stats.reviewsToday}</p>
-              <p className="text-xs dim">今天复习</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold">{stats.producedToday}</p>
-              <p className="text-xs dim">主动用出</p>
-            </div>
+          {/*
+            三个数字用竖分隔线切开，而不是各占一张小卡 ——
+            它们是一组读数，形态上就该连在一起。数字沿用站里的衬线大字。
+          */}
+          <div className="grid grid-cols-3 divide-x divide-[var(--hairline)] text-center">
+            <Metric n={stats.streak} label="连续天数" />
+            <Metric n={stats.reviewsToday} label="今天复习" />
+            <Metric n={stats.producedToday} label="主动用出" />
           </div>
         </Card>
       )}
@@ -277,6 +275,17 @@ function Finished() {
           <Button className="w-full">再聊两句</Button>
         </Link>
       </div>
+    </div>
+  );
+}
+
+function Metric({ n, label }: { n: number; label: string }) {
+  return (
+    <div className="px-2">
+      <p className="serif text-[26px] font-bold leading-none tabular-nums text-[var(--text-title)]">
+        {n}
+      </p>
+      <p className="mt-1.5 text-xs dim">{label}</p>
     </div>
   );
 }

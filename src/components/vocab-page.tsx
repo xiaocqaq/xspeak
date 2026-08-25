@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { RotateCcw, Search, Star, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, Empty, ErrorNote, Input, Spinner } from '@/components/ui';
+import { Badge, Button, Card, Empty, ErrorNote, Input, PageHeader, Spinner } from '@/components/ui';
 import { LookupCard, Speak } from '@/components/stages/shared';
 import { apiGet, apiPost } from '@/lib/fetcher';
 import type { VocabEntry } from '@/lib/types';
@@ -56,12 +56,9 @@ export function VocabPage() {
 
   return (
     <div className="space-y-4 py-2 fade-up">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">词库</h1>
-        <p className="mt-1.5 text-sm dim">
-          “用出次数”比“复习次数”更能说明你会不会用这个词。
-        </p>
-      </header>
+      <PageHeader eyebrow="Vocabulary" title="词库">
+        “用出次数”比“复习次数”更能说明你会不会用这个词。
+      </PageHeader>
 
       <Card className="space-y-3">
         <form
@@ -101,10 +98,12 @@ export function VocabPage() {
             onClick={() => setFilter(f.k)}
             aria-pressed={filter === f.k}
             className={cn(
-              'shrink-0 rounded-full px-3.5 py-1.5 text-sm transition-colors',
+              // 筛选片是描边的方角小牌，不是胶囊：胶囊在这套纸感体系里只留给徽标
+              'shrink-0 rounded-md border px-3 py-1.5 text-[13px] transition-colors duration-200',
+              '[transition-timing-function:var(--ease-standard)]',
               filter === f.k
-                ? 'bg-brand-600 text-white'
-                : 'bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-[var(--text)]',
+                ? 'border-[var(--accent-bar)] bg-[var(--accent-bar)] font-semibold text-white'
+                : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
             )}
           >
             {f.zh}
@@ -122,8 +121,12 @@ export function VocabPage() {
         />
       ) : (
         <>
-          <p className="text-xs dim">{items.length} 个词</p>
-          <ul className="space-y-2">
+          <p className="text-xs tabular-nums dim">{items.length} 个词</p>
+          {/*
+            词卡在宽屏排两列。一条词卡的内容（词形 + 一行释义 + 一行例句）
+            撑不满 830px，单列的结果是右边空一半、而且几十个词要滚很久。
+          */}
+          <ul className="grid gap-2 xl:grid-cols-2">
             {items.map((it) => (
               <li key={it.id}>
                 {/*
@@ -138,7 +141,7 @@ export function VocabPage() {
                         <button
                           type="button"
                           onClick={() => setLookup(it.term)}
-                          className="en text-base font-semibold hover:underline"
+                          className="en text-[17px] font-semibold text-[var(--text-title)] hover:underline"
                         >
                           {it.term}
                         </button>
@@ -146,9 +149,12 @@ export function VocabPage() {
                         {it.phonetic && <span className="en text-xs dim">{it.phonetic}</span>}
                         <StateBadge item={it} />
                       </div>
-                      <p className="mt-1 truncate text-sm">{it.meaning_zh}</p>
+                      <p className="mt-1 truncate text-sm text-[var(--text-body)]">{it.meaning_zh}</p>
+                      {/* 例句用衬线斜体，和释义区分开：一句是解释，一句是引文 */}
                       {it.example_en && (
-                        <p className="en mt-1 truncate text-xs dim">{it.example_en}</p>
+                        <p className="en serif mt-1 truncate text-[13px] italic text-[var(--text-secondary)]">
+                          {it.example_en}
+                        </p>
                       )}
                     </div>
 
@@ -157,14 +163,14 @@ export function VocabPage() {
                       type="button"
                       onClick={() => act('star', it.id)}
                       aria-label={it.progress?.starred ? '取消标星' : '标星'}
-                      className="-mr-1 -mt-1 shrink-0 rounded-lg p-2 hover:bg-[var(--surface-2)]"
+                      className="-mr-1 -mt-1 shrink-0 rounded-md p-2 transition-colors hover:bg-[var(--surface-hover)]"
                     >
                       <Star
                         className={cn(
                           'size-4',
                           it.progress?.starred
-                            ? 'fill-warm-300 text-warm-500'
-                            : 'text-[var(--text-dim)]',
+                            ? 'fill-warm-400 text-warm-500'
+                            : 'text-[var(--text-faint)]',
                         )}
                         aria-hidden
                       />
@@ -173,11 +179,11 @@ export function VocabPage() {
 
                   {it.progress && (
                     <div className="mt-2 flex items-center justify-between gap-2 border-t border-[var(--hairline)] pt-2">
-                      <p className="flex min-w-0 flex-wrap gap-x-3 text-[11px] dim">
+                      <p className="flex min-w-0 flex-wrap gap-x-3 text-[11px] tabular-nums dim">
                         <span>复习 {it.progress.reps} 次</span>
                         <span
                           className={cn(
-                            it.progress.produced_count > 0 && 'font-medium text-brand-600 dark:text-brand-300',
+                            it.progress.produced_count > 0 && 'font-semibold text-[var(--success)]',
                           )}
                         >
                           用出 {it.progress.produced_count} 次
@@ -191,7 +197,7 @@ export function VocabPage() {
                           onClick={() => act('reset', it.id)}
                           aria-label="重置进度"
                           title="从头开始学这个词"
-                          className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+                          className="rounded-md p-1.5 text-[var(--text-faint)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]"
                         >
                           <RotateCcw className="size-3.5" aria-hidden />
                         </button>
@@ -199,7 +205,7 @@ export function VocabPage() {
                           type="button"
                           onClick={() => act('remove', it.id)}
                           aria-label="从生词本移除"
-                          className="rounded-lg p-1.5 text-[var(--text-dim)] hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50"
+                          className="rounded-md p-1.5 text-[var(--text-faint)] transition-colors hover:bg-[color-mix(in_srgb,var(--danger)_12%,var(--surface))] hover:text-[var(--danger)]"
                         >
                           <Trash2 className="size-3.5" aria-hidden />
                         </button>

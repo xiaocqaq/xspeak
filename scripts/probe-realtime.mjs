@@ -31,17 +31,23 @@ if (existsSync(envFile)) {
   }
 }
 
-const KEY = process.env.STEP_API_KEY?.trim();
+// 和应用读同一份配置，免得脚本测的是一个地址、线上跑的是另一个
+const { voiceConfig } = await import('../src/lib/voice/config.mjs');
+const CFG = voiceConfig();
+
+const KEY = CFG.apiKey;
 if (!KEY) {
-  console.error('缺少 STEP_API_KEY，请先在 .env.local 里配置。');
+  console.error('缺少 VOICE_API_KEY / STEP_API_KEY，请先在 .env.local 里配置。');
   process.exit(1);
 }
 
 // 默认跑完整回合 —— 只测连通性说明不了转写还在不在
 const QUICK = process.argv.includes('--quick');
-const HTTP_BASE = 'https://api.stepfun.com/step_plan/v1';
-const WS_BASE = process.env.STEP_REALTIME_URL?.trim() || 'wss://api.stepfun.com/step_plan/v1/realtime';
-const MODEL = 'stepaudio-2.5-realtime';
+const WS_BASE = CFG.realtimeUrl;
+const MODEL = CFG.realtimeModel;
+const ASR = CFG.asrModel;
+const TTS_URL = CFG.ttsUrl;
+const TTS_MODEL = CFG.ttsModel;
 
 let seq = 0;
 const eid = () => `e${Date.now().toString(36)}${(seq++).toString(36)}`;
@@ -68,7 +74,7 @@ function probeSession({ label, withVad }) {
         instructions: 'probe',
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
-        input_audio_transcription: { model: 'stepaudio-2.5-asr' },
+        input_audio_transcription: { model: ASR },
       };
       if (withVad) session.turn_detection = { type: 'server_vad', silence_duration_ms: 700 };
       ws.send(JSON.stringify({ event_id: eid(), type: 'session.update', session }));
@@ -102,11 +108,11 @@ function probeSession({ label, withVad }) {
  */
 async function probeFullTurn(withVad = false) {
   const said = 'I very like coffee. Can I have a big one?';
-  const res = await fetch(`${HTTP_BASE}/audio/speech`, {
+  const res = await fetch(TTS_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: 'stepaudio-2.5-tts',
+      model: TTS_MODEL,
       input: said,
       voice: 'linjiajiejie',
       response_format: 'pcm',
@@ -141,7 +147,7 @@ async function probeFullTurn(withVad = false) {
         instructions: 'You are a friendly barista. Keep replies to one short sentence.',
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
-        input_audio_transcription: { model: 'stepaudio-2.5-asr' },
+        input_audio_transcription: { model: ASR },
       };
       if (withVad) session.turn_detection = { type: 'server_vad', silence_duration_ms: 700 };
       ws.send(JSON.stringify({ event_id: eid(), type: 'session.update', session }));
@@ -216,7 +222,7 @@ console.log(`· ${conn.label}`);
 console.log(`    连接：${conn.verdict}`);
 if (conn.verdict !== 'OK') {
   bad = true;
-  console.log('\n✗ 连不上。地址可能变了，先确认 STEP_REALTIME_URL。');
+  console.log('\n✗ 连不上。地址可能变了，先确认 VOICE_REALTIME_URL。');
   console.log(bad ? '\n有问题，见上面。' : '\n一切正常。');
   process.exit(1);
 }

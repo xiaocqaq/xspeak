@@ -235,15 +235,6 @@ async function generateStage(
         toolName: 'emit_speaking',
       });
       break;
-
-    case 'writing':
-      payload = await generateJson(S.WritingPayload, {
-        system: P.systemPrompt(learner),
-        prompt: P.writingPrompt(ctx, await termsOf(session)),
-        maxTokens: 4000,
-        toolName: 'emit_writing',
-      });
-      break;
   }
 
   await saveStageContent(session.id, stage, payload);

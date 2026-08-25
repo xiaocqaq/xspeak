@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown } from 'lucide-react';
-import { Badge, Card, Empty, ErrorNote, Progress, Spinner } from '@/components/ui';
+import { Badge, Card, Empty, ErrorNote, PageHeader, Progress, Spinner } from '@/components/ui';
 import { Speak, TappableText } from '@/components/stages/shared';
 import { apiGet } from '@/lib/fetcher';
 import type { GrammarRow } from '@/lib/types';
@@ -36,18 +36,16 @@ export function GrammarPage() {
   const learned = items.filter((i) => i.state != null).length;
 
   return (
-    <div className="space-y-4 py-2 fade-up">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">语法</h1>
-        <p className="mt-1.5 text-sm dim">
-          每天一个点，和单词一样进复习队列 —— 讲过一遍不等于会用。
-        </p>
-      </header>
+    // 单列正文，拉到 76rem 只会让一行长到读不下去，自己收窄
+    <div className="mx-auto max-w-[var(--content-w)] space-y-4 py-2 fade-up">
+      <PageHeader eyebrow="Grammar" title="语法">
+        每天一个点，和单词一样进复习队列 —— 讲过一遍不等于会用。
+      </PageHeader>
 
       <Card>
         <div className="flex items-baseline justify-between">
-          <span className="text-sm font-medium">已经过过一遍</span>
-          <span className="text-sm dim">
+          <span className="text-sm font-medium text-[var(--text-title)]">已经过过一遍</span>
+          <span className="text-sm tabular-nums dim">
             {learned}/{items.length}
           </span>
         </div>
@@ -69,15 +67,19 @@ export function GrammarPage() {
                     aria-expanded={isOpen}
                     className="flex w-full items-start gap-3 p-4 text-left"
                   >
+                    {/*
+                      序号章。没学过是空心的（描边 + 纸底），学过才填色 ——
+                      这样一眼扫下来，实心的那些就是已经走过的进度。
+                    */}
                     <span
                       className={cn(
-                        'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold',
+                        'mt-0.5 grid size-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold tabular-nums',
                         g.state == null
-                          ? 'bg-[var(--surface-2)] text-[var(--text-dim)]'
+                          ? 'border border-[var(--border)] bg-[var(--bg-sidebar)] text-[var(--text-faint)]'
                           : g.state === 3
-                            ? 'bg-red-500 text-white'
+                            ? 'bg-[var(--danger)] text-white'
                             : g.state === 2
-                              ? 'bg-brand-500 text-white'
+                              ? 'bg-[var(--accent-bar)] text-white'
                               : 'bg-warm-500 text-white',
                       )}
                     >
@@ -85,7 +87,7 @@ export function GrammarPage() {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-sm font-medium">{g.title_zh}</span>
+                        <span className="text-sm font-semibold text-[var(--text-title)]">{g.title_zh}</span>
                         <Badge>{g.cefr}</Badge>
                         {g.error_count > 0 && <Badge tone="danger">错过 {g.error_count} 次</Badge>}
                       </span>
@@ -98,35 +100,43 @@ export function GrammarPage() {
                   </button>
 
                   {isOpen && (
-                    <div className="space-y-3 border-t border-[var(--border)] p-4 fade-up">
+                    <div className="space-y-3 border-t border-[var(--hairline)] p-4 fade-up">
+                      {/* 句型是"公式"，给它一条左边线，像书里引的一行代码 */}
                       {g.pattern && (
-                        <p className="en rounded-lg bg-[var(--surface-2)] px-3 py-2 text-sm">{g.pattern}</p>
+                        <p className="en rounded-r-md border-l-2 border-[var(--accent-bar)] bg-[var(--bg-sidebar)] px-3 py-2 text-sm font-medium text-[var(--text-title)]">
+                          {g.pattern}
+                        </p>
                       )}
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{g.explain_zh}</p>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-body)]">
+                        {g.explain_zh}
+                      </p>
 
                       {g.examples.length > 0 && (
                         <div className="space-y-2">
                           {g.examples.map((ex, i) => (
-                            <div key={i} className="rounded-lg bg-[var(--surface-2)] p-2.5">
+                            <div
+                              key={i}
+                              className="rounded-lg border border-[var(--hairline)] bg-[var(--bg-sidebar)] p-2.5"
+                            >
                               <div className="flex items-start gap-1.5">
                                 <TappableText text={ex.en} className="flex-1 text-sm" />
                                 <Speak text={ex.en} className="p-0.5" />
                               </div>
-                              <p className="mt-0.5 text-xs dim">{ex.zh}</p>
+                              <p className="mt-1 text-xs dim">{ex.zh}</p>
                             </div>
                           ))}
                         </div>
                       )}
 
                       {g.pitfalls.length > 0 && (
-                        <div className="rounded-lg border border-warm-200 bg-warm-50 p-3 dark:border-warm-900 dark:bg-warm-900/25">
+                        <div className="rounded-lg border border-warm-200 bg-warm-50 p-3 dark:border-warm-800 dark:bg-warm-900/25">
                           <div className="flex items-center gap-1.5">
                             <AlertTriangle className="size-3.5 text-warm-500" aria-hidden />
-                            <p className="text-xs font-semibold">容易踩的坑</p>
+                            <p className="text-xs font-semibold text-warm-700 dark:text-warm-300">容易踩的坑</p>
                           </div>
                           <ul className="mt-1.5 space-y-1">
                             {g.pitfalls.map((p, i) => (
-                              <li key={i} className="text-xs">
+                              <li key={i} className="text-xs leading-relaxed text-[var(--text-body)]">
                                 · {p}
                               </li>
                             ))}

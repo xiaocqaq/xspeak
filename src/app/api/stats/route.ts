@@ -53,10 +53,20 @@ export async function GET() {
       [user.id],
     );
 
-    const writing = await one<{ avg: number | null; c: number }>(
-      `SELECT AVG(score) AS avg, COUNT(*) AS c FROM writings
-       WHERE user_id = ? AND created_at >= now() - interval '30 days'`,
-      [user.id],
+    /*
+     * 开口时长和对话轮数。原来这一格是写作平均分，写作环节删掉之后换成这个。
+     * 时长来自 daily_stats.spoken_seconds（跟读和口语环节都会累加），
+     * 轮数只数 chat_messages 里 role='user' 的行 —— AI 的回复不算学生开口。
+     */
+    const talk = await one<{ seconds: number | null; turns: number }>(
+      `SELECT
+         (SELECT SUM(spoken_seconds) FROM daily_stats
+           WHERE user_id = ? AND day >= (now() - interval '30 days')::date) AS seconds,
+         (SELECT COUNT(*) FROM chat_messages m
+            JOIN conversations c ON c.id = m.conversation_id
+           WHERE c.user_id = ? AND m.role = 'user'
+             AND m.created_at >= now() - interval '30 days') AS turns`,
+      [user.id, user.id],
     );
 
     const topMistakeKinds = await all<{ kind: string; n: number }>(
@@ -75,7 +85,10 @@ export async function GET() {
       summary,
       forecast,
       speech: { avg: speech?.avg == null ? null : Math.round(speech.avg), count: speech?.c ?? 0 },
-      writing: { avg: writing?.avg == null ? null : Math.round(writing.avg), count: writing?.c ?? 0 },
+      talk: {
+        minutes: Math.round((Number(talk?.seconds ?? 0) / 60) * 10) / 10,
+        turns: Number(talk?.turns ?? 0),
+      },
       topMistakeKinds,
       mistakes: mistakes.slice(0, 30),
       sessions: sessions.map((s) => ({

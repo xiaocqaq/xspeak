@@ -13,9 +13,22 @@
 const VERSION = 'linxi-v1';
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGE_CACHE = `${VERSION}-pages`;
-const OFFLINE_URL = '/offline';
 
-const PRECACHE = [OFFLINE_URL, '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
+/*
+ * 部署前缀。这个文件是 public/ 里的静态资源，不经过 Next 编译，读不到环境变量，
+ * 所以从自己被请求的地址反推：挂在 /xlearn/sw.js 就得出 '/xlearn'，挂在根上就是 ''。
+ * 这样同一份文件在根部署和子路径部署下都对，不用改。
+ */
+const BASE = self.location.pathname.replace(/\/sw\.js$/, '');
+
+const OFFLINE_URL = `${BASE}/offline`;
+
+const PRECACHE = [
+  OFFLINE_URL,
+  `${BASE}/manifest.webmanifest`,
+  `${BASE}/icons/icon-192.png`,
+  `${BASE}/icons/icon-512.png`,
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -81,7 +94,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname.startsWith('/api/')) {
+  // 子路径部署时同域下还住着别人的站。SW 的作用域已经限死在 BASE 下面了，
+  // 但这里再挡一道：不是自己这一段的请求一律放过，不缓存、不改写。
+  if (BASE && !url.pathname.startsWith(`${BASE}/`) && url.pathname !== BASE) return;
+
+  if (url.pathname.startsWith(`${BASE}/api/`)) {
     event.respondWith(fetch(request).catch(() => offlineJson()));
     return;
   }
@@ -92,9 +109,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (
-    url.pathname.startsWith('/_next/static/') ||
-    url.pathname.startsWith('/icons/') ||
-    url.pathname === '/manifest.webmanifest' ||
+    url.pathname.startsWith(`${BASE}/_next/static/`) ||
+    url.pathname.startsWith(`${BASE}/icons/`) ||
+    url.pathname === `${BASE}/manifest.webmanifest` ||
     /\.(?:css|js|woff2?|png|svg|jpg|jpeg|webp|ico)$/.test(url.pathname)
   ) {
     event.respondWith(staleWhileRevalidate(request));

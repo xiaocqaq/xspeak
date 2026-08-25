@@ -134,6 +134,8 @@ export async function POST(req: Request) {
       maxTokens: 2000,
       temperature: 0.5,
       toolName: 'emit_lookup',
+      // 查一个词而已，用户在等结果 —— 走 fast 角色
+      role: 'fast',
     });
 
     const wordId = await upsertWordFromAi(

@@ -19,36 +19,47 @@ export function Button({
   disabled,
   ...rest
 }: ButtonProps) {
+  /**
+   * 按钮配色。
+   *
+   * 上一版按下用 scale(0.96)（iOS 手感），这一版换成颜色加深 + 极轻的下沉 ——
+   * 纸面上的控件不该缩放，那是触屏原生控件的语言。
+   * disabled 用 fill 底 + 灰字，不用半透明主色：淡绿看着还像个能点的按钮。
+   */
   const variants = {
-    // 主按钮：实心蓝底。投影轻，按下靠缩放反馈而不是下沉 ——
-    // scale(0.96) 是 iOS 的标准按压手感，translateY 那套是网页习惯。
-    // disabled 用 fill 色而不是淡蓝：淡蓝看着还像个能点的蓝按钮，辨识度不够。
-    primary:
-      'bg-brand-500 text-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] hover:bg-brand-700 active:scale-[0.96] disabled:bg-[var(--surface-2)] disabled:text-[var(--text-dim)] disabled:shadow-none dark:bg-brand-600',
-    warm: 'bg-warm-500 text-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] hover:bg-warm-600 active:scale-[0.96] disabled:opacity-50',
-    // 次级按钮：用 Apple 的 fill 色打底，不描边。系统里这类按钮都是淡底色块。
-    outline:
-      'bg-[var(--surface-2)] text-[var(--text)] hover:brightness-95 active:scale-[0.96] dark:hover:brightness-110',
-    ghost: 'text-brand-500 hover:bg-[var(--surface-2)] active:scale-[0.96] dark:text-brand-600',
-    danger: 'bg-[var(--danger)] text-white hover:brightness-95 active:scale-[0.96]',
+    primary: cn(
+      'bg-brand-500 text-white shadow-[0_1px_2px_rgba(23,62,54,0.18)]',
+      'hover:bg-brand-600 active:translate-y-px',
+      'disabled:bg-[var(--surface-2)] disabled:text-[var(--text-faint)] disabled:shadow-none',
+    ),
+    warm: cn(
+      'bg-warm-500 text-white shadow-[0_1px_2px_rgba(23,62,54,0.18)]',
+      'hover:bg-warm-600 active:translate-y-px disabled:opacity-50',
+    ),
+    // 次级按钮：纸面 + 1px 描边。这是参照站里所有次级控件的形态。
+    outline: cn(
+      'border border-[var(--border-chrome)] bg-[var(--surface)] text-[var(--text-title)]',
+      'hover:border-[var(--border)] hover:bg-[var(--surface-hover)] active:translate-y-px',
+    ),
+    ghost: 'text-brand-600 hover:bg-[var(--surface-hover)] active:translate-y-px',
+    danger: 'bg-[var(--danger)] text-white hover:brightness-95 active:translate-y-px',
   };
   /**
    * 尺寸。
-   * 44px 是 iOS 的最小可点区，md 因此钉在 h-11。
-   * 圆角统一 12px（rounded-xl），sm 也不例外 —— 按钮只该有一种圆角。
+   * md 钉在 h-11（44px），触屏最小可点区。圆角统一走 rounded-xl（10px）。
    */
   const sizes = {
-    sm: 'h-9 px-4 text-sm rounded-xl gap-2',
-    md: 'h-11 px-6 text-sm rounded-xl gap-2',
-    lg: 'h-12 px-8 text-base rounded-xl gap-2',
+    sm: 'h-9 px-3.5 text-[13px] rounded-xl gap-1.5',
+    md: 'h-11 px-5 text-sm rounded-xl gap-2',
+    lg: 'h-12 px-7 text-[15px] rounded-xl gap-2',
   };
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center font-medium',
-        // 过渡用 Apple 的标准缓动，不用 Tailwind 默认的 ease
-        'transition-all duration-300 [transition-timing-function:var(--ease-standard)]',
-        'disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100',
+        'inline-flex items-center justify-center font-semibold',
+        'transition-[background-color,border-color,color,transform,box-shadow] duration-200',
+        '[transition-timing-function:var(--ease-standard)]',
+        'disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0',
         variants[variant],
         sizes[size],
         className,
@@ -66,11 +77,19 @@ export function Card({
   className,
   children,
   lifted,
+  interactive,
   ...rest
-}: HTMLAttributes<HTMLDivElement> & { lifted?: boolean }) {
+}: HTMLAttributes<HTMLDivElement> & { lifted?: boolean; interactive?: boolean }) {
   return (
-    // 内边距对齐 8pt 网格：手机 16px，宽屏 24px
-    <div className={cn('card p-4 sm:p-6', lifted && 'card-lifted', className)} {...rest}>
+    <div
+      className={cn(
+        'card p-5 sm:p-6',
+        lifted && 'card-lifted',
+        interactive && 'card-interactive',
+        className,
+      )}
+      {...rest}
+    >
       {children}
     </div>
   );
@@ -86,22 +105,24 @@ export function Badge({
   className?: string;
 }) {
   /**
-   * 徽章配色。
-   * 用 Apple 的半透明 fill 而不是实心淡色：叠在玻璃卡片上时，
-   * 实心色块会把下面透出来的层次遮掉。
+   * 徽章：浅底 + 深色同族文字 + 1px 同色描边。
+   * 纸面是实色的，所以这里可以放心用实色浅底，不必像玻璃那样怕遮住层次。
    */
   const tones = {
-    neutral: 'bg-[var(--surface-2)] text-[var(--text-dim)]',
-    brand: 'bg-brand-500/12 text-brand-700 dark:text-brand-300',
-    warm: 'bg-warm-500/14 text-warm-700 dark:text-warm-300',
-    danger: 'bg-[var(--danger)]/12 text-[var(--danger)]',
-    success: 'bg-[var(--success)]/14 text-[color-mix(in_srgb,var(--success)_80%,black)] dark:text-[var(--success)]',
+    neutral: 'bg-[var(--surface-2)] text-[var(--text-secondary)] border-[var(--border)]',
+    brand: 'bg-brand-50 text-brand-700 border-brand-200 dark:bg-brand-900/50 dark:text-brand-300 dark:border-brand-800',
+    warm: 'bg-warm-50 text-warm-700 border-warm-200 dark:bg-warm-900/40 dark:text-warm-300 dark:border-warm-800',
+    danger: cn(
+      'text-[var(--danger)]',
+      'bg-[color-mix(in_srgb,var(--danger)_10%,var(--bg))]',
+      'border-[color-mix(in_srgb,var(--danger)_28%,transparent)]',
+    ),
+    success: 'bg-brand-50 text-brand-700 border-brand-200 dark:bg-brand-900/50 dark:text-brand-300 dark:border-brand-800',
   };
   return (
     <span
       className={cn(
-        // 徽章圆角 8px（rounded-lg 已映射到 8px）
-        'inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium',
+        'inline-flex items-center rounded-md border px-2 py-0.5 text-[11.5px] font-semibold',
         tones[tone],
         className,
       )}
@@ -111,50 +132,95 @@ export function Badge({
   );
 }
 
+/** 全大写小标签，用来分隔版块。比再来一个标题更轻。 */
+export function SectionLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <p className={cn('section-label', className)}>{children}</p>;
+}
+
+/**
+ * 每个页面顶部的标题区。
+ *
+ * 站里六个页面原来各写一遍 `text-2xl font-semibold tracking-tight`，字号还和
+ * 首页不一致。抽成一个组件，页面标题的形态就只有一处定义：
+ * 小标签 + 衬线大标题 + 一句说明。
+ *
+ * eyebrow 用英文单词而不是中文：它是装饰性的分区标记，中文放这儿会被当成正文读。
+ */
+export function PageHeader({
+  eyebrow,
+  title,
+  children,
+  actions,
+}: {
+  eyebrow?: string;
+  title: ReactNode;
+  /** 标题下面那句说明。 */
+  children?: ReactNode;
+  /** 右上角的操作区，比如"换一批"。 */
+  actions?: ReactNode;
+}) {
+  return (
+    <header className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        {eyebrow && <p className="section-label">{eyebrow}</p>}
+        <h1 className={cn('text-[26px] sm:text-[30px]', eyebrow && 'mt-1.5')}>{title}</h1>
+        {children && (
+          <p className="mt-2 max-w-prose text-sm leading-relaxed text-[var(--text-secondary)]">
+            {children}
+          </p>
+        )}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2 pt-1">{actions}</div>}
+    </header>
+  );
+}
+
 export function Progress({ value, className }: { value: number; className?: string }) {
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div
-      className={cn('h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]', className)}
+      // 进度条压成 6px 小圆角，和「数据」页、图表里的条同形（胶囊只留给徽标）
+      className={cn('h-1.5 w-full overflow-hidden rounded-sm bg-[var(--surface-2)]', className)}
       role="progressbar"
       aria-valuenow={Math.round(pct)}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className="h-full rounded-full bg-brand-500 transition-[width] duration-500 [transition-timing-function:var(--ease-standard)] dark:bg-brand-600"
+        className="h-full rounded-sm bg-[var(--accent-bar)] transition-[width] duration-500 [transition-timing-function:var(--ease-standard)]"
         style={{ width: `${pct}%` }}
       />
     </div>
   );
 }
 
+/**
+ * 输入框。
+ * 描边 + 略深的底，聚焦时描边染主色 —— 表单控件在纸面上需要边界，
+ * 上一版那种"无框 fill 底"是玻璃体系的做法，放到纸上会分不清哪里能打字。
+ */
+const fieldBase = cn(
+  'w-full rounded-xl border border-[var(--border-control)] bg-[var(--surface)]',
+  'text-[var(--text-body)] placeholder:text-[var(--text-faint)]',
+  'transition-[border-color,box-shadow] duration-150 focus:outline-none',
+  'focus:border-brand-500 focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-brand-400)_22%,transparent)]',
+);
+
 export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea
-      className={cn(
-        // 输入框用 fill 色打底、不描边，这是 Apple 表单的默认形态
-        'w-full rounded-xl bg-[var(--surface-2)] p-4 text-base sm:text-sm',
-        'placeholder:text-[var(--text-dim)] focus:outline-none',
-        className,
-      )}
-      {...rest}
-    />
-  );
+  return <textarea className={cn(fieldBase, 'p-3.5 text-base sm:text-sm', className)} {...rest} />;
 }
 
-export function Input({
-  className,
-  ...rest
-}: React.InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...rest }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
-      className={cn(
-        // 手机上 16px 以下的字号会触发 Safari 自动放大，所以移动端保持 text-base
-        'h-11 w-full rounded-xl bg-[var(--surface-2)] px-4 text-base sm:text-sm',
-        'placeholder:text-[var(--text-dim)] focus:outline-none',
-        className,
-      )}
+      // 手机上 16px 以下的字号会触发 Safari 自动放大，所以移动端保持 text-base
+      className={cn(fieldBase, 'h-11 px-3.5 text-base sm:text-sm', className)}
       {...rest}
     />
   );
@@ -171,11 +237,18 @@ export function Spinner({ label = '加载中' }: { label?: string }) {
 
 export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    // 错误用 systemRed 的半透明底，不描边 —— 系统里的提示块都是纯色底没有框
-    <div className="rounded-2xl bg-[var(--danger)]/10 p-4 text-sm text-[var(--danger)]">
+    <div
+      className={cn(
+        // 底色和描边用 color-mix 明确算出来：对 var() 颜色用 /8 这种透明度修饰符
+        // 在 Tailwind 里要靠 color-mix 兜底，写死更稳，也省得猜编译结果
+        'rounded-2xl border p-4 text-sm text-[var(--danger)]',
+        'border-[color-mix(in_srgb,var(--danger)_28%,transparent)]',
+        'bg-[color-mix(in_srgb,var(--danger)_9%,var(--bg))]',
+      )}
+    >
       <p className="whitespace-pre-wrap">{message}</p>
       {onRetry && (
-        <Button variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+        <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
           重试
         </Button>
       )}
@@ -197,11 +270,17 @@ export function Empty({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center rounded-2xl bg-[var(--surface-2)] px-6 py-8 text-center">
-      {icon && <div className="mb-2 text-[var(--text-dim)]">{icon}</div>}
-      <p className="font-medium">{title}</p>
-      {hint && <p className="mt-1 max-w-xs text-sm dim">{hint}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div
+      className={cn(
+        'flex flex-col items-center rounded-2xl border border-dashed border-[var(--border)]',
+        'bg-[var(--bg-sidebar)] px-6 py-10 text-center',
+      )}
+    >
+      {icon && <div className="mb-3 text-[var(--text-faint)]">{icon}</div>}
+      <p className="font-semibold text-[var(--text-title)]">{title}</p>
+      {hint && <p className="mt-1.5 max-w-sm text-sm dim">{hint}</p>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }
+
