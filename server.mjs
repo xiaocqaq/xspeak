@@ -48,7 +48,8 @@ const server = createServer((req, res) => handle(req, res));
 
 // noServer 模式：自己判断 upgrade 请求要不要接，避免和 Next 的 HMR socket 抢连接
 const wss = new WebSocketServer({ noServer: true });
-attachRelay(wss, { localOrigin: `http://${hostname}:${port}` });
+// realtimePath 已经带上了 basePath，中转层要用同一个值校验，否则子路径下会自己把连接关掉
+attachRelay(wss, { localOrigin: `http://${hostname}:${port}${basePath}`, path: realtimePath });
 
 server.on('upgrade', (req, socket, head) => {
   let pathname;

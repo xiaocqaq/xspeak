@@ -26,11 +26,16 @@ const eid = () => `e${Date.now().toString(36)}${(seq++).toString(36)}`;
 /**
  * 把 ws 的 WebSocketServer 接到 upgrade 流程上。
  * @param {import('ws').WebSocketServer} wss
- * @param {{ localOrigin: string }} opts localOrigin 用于回调自家 coach 接口
+ * @param {{ localOrigin: string, path?: string }} opts
+ *   localOrigin 用于回调自家 coach 接口；
+ *   path 是中转层实际挂载的路径。子路径部署时它是 `<前缀>/api/realtime`，
+ *   跟裸的 REALTIME_PATH 不是同一个字符串 —— 这里不带前缀去比，
+ *   会把每一个正常连接都当成走错门的关掉（1008），畅聊在子路径下直接不可用。
  */
 export function attachRelay(wss, opts) {
+  const mountPath = opts.path || REALTIME_PATH;
   wss.on('connection', (client, req) => {
-    if (!req.url || !req.url.startsWith(REALTIME_PATH)) {
+    if (!req.url || !req.url.startsWith(mountPath)) {
       client.close(1008, 'unexpected path');
       return;
     }

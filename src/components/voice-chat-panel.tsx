@@ -52,11 +52,14 @@ export function VoiceChatPanel({
   useEffect(() => () => vc.stop(), []);
   // eslint-disable-next-line react-hooks/exhaustive-deps
 
+  // 只在还通着的时候走表。connected 只记录「点过接通」，断线后仍然是 true ——
+  // 光看它计时，会出现「通话已结束」下面秒数还在涨，看着像连着其实早断了。
+  const live = connected && vc.status !== 'idle' && vc.status !== 'error';
   useEffect(() => {
-    if (!connected) return;
+    if (!live) return;
     const t = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => clearInterval(t);
-  }, [connected]);
+  }, [live]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
