@@ -29,26 +29,34 @@ export function Speak({
    */
   onlineOnly?: boolean;
 }) {
-  const { speak, speaking, synthesizing, speechError, supported } = useTts();
+  const { speak, speaking, supported } = useTts();
   // onlineOnly 不依赖 speechSynthesis，浏览器不支持也照样能放在线音频
   if (!supported && !onlineOnly) return null;
+  /*
+   * 这里不再挂 SpeechTip（2026-08-29 改）。
+   *
+   * 原来每个 onlineOnly 的 Speak 内部各挂一份，于是阅读页 5 个 Speak
+   * 就有 5 个 fixed 定位的提示容器叠在同一坐标 —— 它们共用同一个 useTts
+   * 实例，synthesizing 一变就会同时显示同一句话。
+   *
+   * 提示是页面级的东西（整页同一时刻只该有一条），所以改由页面自己挂一次：
+   * 听力页早就是这么做的（root 级一个 SpeechTip），阅读页照做。
+   * 见 reading.tsx / listening.tsx 里的 <SpeechTip/>。
+   */
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => speak(text, { slow, onlineOnly })}
-        aria-label={label ?? `朗读：${text.slice(0, 40)}`}
-        className={cn(
-          'inline-flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors',
-          'text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-brand-600',
-          speaking && 'text-brand-600',
-          className,
-        )}
-      >
-        <Volume2 className={cn('size-4', speaking && 'animate-pulse')} aria-hidden />
-      </button>
-      {onlineOnly && <SpeechTip synthesizing={synthesizing} error={speechError} />}
-    </>
+    <button
+      type="button"
+      onClick={() => speak(text, { slow, onlineOnly })}
+      aria-label={label ?? `朗读：${text.slice(0, 40)}`}
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors',
+        'text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-brand-600',
+        speaking && 'text-brand-600',
+        className,
+      )}
+    >
+      <Volume2 className={cn('size-4', speaking && 'animate-pulse')} aria-hidden />
+    </button>
   );
 }
 

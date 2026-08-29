@@ -29,7 +29,8 @@ const GOALS = [
   { v: 'reading', zh: '阅读' },
   { v: 'work', zh: '工作沟通' },
   { v: 'exam', zh: '考试' },
-  { v: 'travel', zh: '旅行' },
+  // 「出国旅行」而不是「旅行」：兴趣标签里也有一个「旅行」，同名会让人不知道点哪个（引导页早就这么写了）
+  { v: 'travel', zh: '出国旅行' },
 ] as const;
 
 const INTERESTS = ['科技', '游戏', '电影美剧', '音乐', '旅行', '美食', '运动', '编程', '职场', '新闻', '动物', '心理'];
@@ -326,7 +327,7 @@ export function SettingsPage() {
         </div>
         <p className="mt-1.5 text-xs leading-relaxed dim">
           点单词、例句旁边的喇叭时用的声音，和打电话那套是两回事。
-          {serverTts && '点朗读时用的是「在线音色」，云端秒级出声。「自建音色」只用在凌晨的免费预生成上，选它是给那一轮定调子。'}
+          {serverTts && '点朗读时用的是「在线音色」，云端秒级出声。「自建音色」只用在后台的免费预生成上，选它是给那一轮定调子，不影响你点朗读听到的声音。'}
           {'「系统语音包」用你设备自带的，离线可用。'}
         </p>
 
@@ -356,8 +357,21 @@ export function SettingsPage() {
                 <div key={g.key}>
                   <p className="mb-1.5 text-[11px] dim">
                     {g.zh}
-                    {isMimoGroup ? '（点朗读用这个）' : '（仅凌晨预生成）'}
+                    {isMimoGroup ? '（点朗读用这个）' : '（仅后台预生成）'}
                   </p>
+                  {/*
+                    自建音色组下面挂一句说明（2026-08-29 加）。
+                    分组标签只写「仅后台预生成」还不够 —— 用户点了一个自建音色、
+                    看到它高亮，会合理地以为点朗读就会用它。实际上点朗读固定走
+                    在线音色，这一列只决定凌晨那轮免费预生成的嗓音。
+                    不说清楚就会变成「我选了贝拉却一直听到米娅」（生产实锤）。
+                  */}
+                  {!isMimoGroup && (
+                    <p className="mb-1.5 text-[11px] leading-relaxed text-warm-700 dark:text-warm-200">
+                      选这里的音色不影响点朗读 —— 点朗读一律用上面的在线音色（云端秒级出声）。
+                      这一组只决定凌晨免费预生成那一轮用哪个嗓音。
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                     {g.voices.map((v) => (
                       <VoiceCell
@@ -995,6 +1009,12 @@ function VoiceCell({
         type="button"
         onClick={onPick}
         aria-pressed={active}
+        /*
+         * 显式给读屏一个带停顿的名字（2026-08-29 加）。
+         * 视觉上名字和说明是分两行的，但读屏念的是 textContent —— 会连成
+         * 「米娅清亮女声，念课文干脆」。加个破折号把两段隔开。
+         */
+        aria-label={name ? (note ? `${name} —— ${note}` : name) : '自动挑选'}
         className="min-w-0 flex-1 text-left"
       >
         <span className="flex items-center gap-1 text-sm font-medium text-[var(--text-title)]">

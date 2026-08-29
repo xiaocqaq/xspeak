@@ -65,6 +65,13 @@ export function GrammarPage() {
                     type="button"
                     onClick={() => setOpen(isOpen ? null : g.id)}
                     aria-expanded={isOpen}
+                    /*
+                     * 显式 aria-label（2026-08-29 加）。
+                     * 卡片里是「序号章 + 标题 + 等级徽标 + 英文名」四块，视觉上分得很开，
+                     * 但读屏念 textContent 会连成「2一般现在时与第三人称单数 -sA1Present simple」。
+                     * 这里用顿号把各段隔开。
+                     */
+                    aria-label={[g.title_zh, g.cefr, g.title_en].filter(Boolean).join('、')}
                     className="flex w-full items-start gap-3 p-4 text-left"
                   >
                     {/*

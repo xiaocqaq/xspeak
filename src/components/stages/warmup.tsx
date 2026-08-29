@@ -295,7 +295,8 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
         而且没人会读它。主题信息在 runner 顶部已经有了。
       */}
       <p className="en text-[13px] font-medium tabular-nums dim">
-        {idx + 1} / {total}
+        {/* 和右栏「这一轮（n/总）」统一成不带空格的写法 */}
+        {idx + 1}/{total}
         {!isCloze && <span className="ml-2 dim">释义</span>}
       </p>
 
@@ -321,7 +322,21 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
             </p>
             <p className="mt-3 text-[15px] leading-relaxed dim">{clozeItem!.sentence_zh}</p>
             {picked === null && (
-              <p className="mt-2 text-[13px] dim">提示：{clozeItem!.hint_zh}</p>
+              <p className="mt-2 flex items-start justify-between gap-3 text-[13px] dim">
+                <span>提示：{clozeItem!.hint_zh}</span>
+                {/*
+                  答题阶段也能听一遍（2026-08-29 加）。
+                  完形考的是搭配，听一遍句子对判断很有帮助 —— 释义题一直有朗读键，
+                  完形却只在揭晓答案后才出现，答题时想听没有入口。
+                  刻意读**挖空后**的句子（把 ___ 念成 "blank"），不是 filled ——
+                  读原句等于直接把答案说出来。
+                */}
+                <Speak
+                  text={clozeItem!.sentence_en.replace('___', ' blank ')}
+                  label="朗读题目（空格处念 blank）"
+                  className="-mt-1 shrink-0"
+                />
+              </p>
             )}
           </>
         ) : (
