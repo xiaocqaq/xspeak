@@ -26,6 +26,7 @@ const KIND_ZH: Record<string, string> = {
   style: '表达',
   pronunciation: '发音',
   listening: '听力',
+  reading: '阅读',
 };
 
 /** 数据页。重点不是"你有多努力"，是"哪些东西你其实还不会"。 */

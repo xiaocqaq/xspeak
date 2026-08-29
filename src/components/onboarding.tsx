@@ -34,7 +34,7 @@ export function Onboarding() {
   const [goal, setGoal] = useState<string>('daily_talk');
   const [interests, setInterests] = useState<string[]>([]);
   const [dailyMinutes, setDailyMinutes] = useState(30);
-  const [newWordsPerDay, setNewWordsPerDay] = useState(8);
+  const [newWordsPerDay, setNewWordsPerDay] = useState(10);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +61,16 @@ export function Onboarding() {
   };
 
   return (
-    <div className="space-y-5 py-6 fade-up">
+    /*
+       (bare) 布局只给一个 min-h-dvh 的 main，不限宽也不加左右留白——页面自己排。
+       这里原来是个裸 div，宽屏上就铺满整个视口：水平选项被拉成一条条横贯屏幕的长条，
+       右边大片空白，读起来要来回扫。收到 34rem 单列。
+
+       为什么不是 --content-w(52rem)：那是正文页的宽度，给表格和两列内容用的。
+       这一页全是短标签和滑块，行长超过 35em 之后每行的信息密度反而在掉。
+       也不用登录页的 max-w-md(28rem)——兴趣那 12 个 chip 会挤成很多行。
+    */
+    <div className="mx-auto w-full max-w-[34rem] space-y-5 px-4 py-6 sm:px-6 fade-up">
       <PageHeader title="先认识一下">
         这几项决定 AI 每天给你出什么内容。后面在设置里随时能改。
       </PageHeader>
@@ -166,13 +175,13 @@ export function Onboarding() {
             id="nwpd"
             type="range"
             min={3}
-            max={20}
+            max={100}
             value={newWordsPerDay}
             onChange={(e) => setNewWordsPerDay(Number(e.target.value))}
             className="mt-3 w-full accent-[var(--accent-bar)]"
           />
           <p className="mt-2 text-xs dim">
-            少而牢比多而忘划算。8 个左右，配上复习，一天正好 30 分钟。
+            默认 10，最多 100。少而牢比多而忘划算 —— 10 个左右配上复习，一天正好 30 分钟。
           </p>
         </div>
       </Card>

@@ -125,10 +125,17 @@ export function VocabPage() {
           {/*
             词卡在宽屏排两列。一条词卡的内容（词形 + 一行释义 + 一行例句）
             撑不满 830px，单列的结果是右边空一半、而且几十个词要滚很久。
+
+            两个 minmax(0,…) 和 li 上的 min-w-0 都是必需的，不是保险：
+            网格项的默认 min-width 是 auto，也就是"不小于内容的最小尺寸"。
+            释义那行是 truncate（nowrap），它的最小尺寸等于整行文字的宽度 ——
+            词典里最长的一条释义有 99 个字符宽（"在前台办入住/登记。到了酒店…"，
+            全中文没有空格可断），于是网格轨道被顶到 700px 上下，
+            手机上整页跟着横向溢出。min-w-0 把这个下限压回 0，truncate 才生效。
           */}
-          <ul className="grid gap-2 xl:grid-cols-2">
+          <ul className="grid grid-cols-[minmax(0,1fr)] gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             {items.map((it) => (
-              <li key={it.id}>
+              <li key={it.id} className="min-w-0">
                 {/*
                   一条词卡分三层：认读（词形/音标/状态）→ 释义例句 → 进度和操作。
                   操作图标刻意不再竖排成一列 —— 那样每条卡片都被撑到三个图标的高度，
