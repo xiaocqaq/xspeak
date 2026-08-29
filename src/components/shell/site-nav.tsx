@@ -26,7 +26,7 @@ import { SidebarGroup } from './sidebar-frame';
 const PRIMARY = [
   { href: '/', label: '首页', Icon: Home, hint: '今天的安排' },
   { href: '/learn', label: '今日学习', Icon: GraduationCap, hint: '六个环节' },
-  { href: '/chat', label: 'AI 对话', Icon: MessagesSquare, hint: '打字或畅聊' },
+  { href: '/chat', label: 'AI 对话', Icon: MessagesSquare, hint: '挑场景打电话' },
   { href: '/vocab', label: '词库', Icon: BookMarked, hint: '生词本与复习' },
   { href: '/stats', label: '数据', Icon: BarChart3, hint: '进度与错误本' },
 ] as const;

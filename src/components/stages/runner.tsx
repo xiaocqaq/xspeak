@@ -32,7 +32,8 @@ export function SessionRunner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [allDone, setAllDone] = useState(false);
+  /** 走到最后一环时，前面还漏着哪几环 —— 非空就在结束页列出来 */
+  const [allDone, setAllDone] = useState<Stage[] | null>(null);
   /** 手机上环节抽屉是否开着 */
   const [navOpen, setNavOpen] = useState(false);
   const enteredAt = useRef(Date.now());
@@ -97,9 +98,22 @@ export function SessionRunner() {
         '/api/session/stage',
         { stage, minutes: Math.round(minutes * 10) / 10 },
       );
-      const next = STAGES.find((s) => !r.stagesDone.includes(s));
+      /*
+       * 往后走，不回头。
+       *
+       * 以前这里是 `STAGES.find((s) => !stagesDone.includes(s))` —— 找的是「第一个
+       * 没做的」，不是「当前这个的下一个」。第一天没有到期复习，热身是空态、
+       * 走过去也不算 done，于是阅读做完提交，find 从头扫又扫回热身：按钮上写着
+       * 「去练口语」，人却被送回复习。
+       *
+       * 六个环节是有顺序的一条线（热身→新词→语法→听力→阅读→口语），
+       * 所以「下一个」只能在自己后面找。侧栏和首页仍然可以直接跳到任意一环，
+       * 漏掉的那几环留到结束页统一提示，不在这里悄悄插队。
+       */
+      const rest = STAGES.slice(STAGES.indexOf(stage) + 1);
+      const next = rest.find((s) => !r.stagesDone.includes(s));
       if (!next) {
-        setAllDone(true);
+        setAllDone(STAGES.filter((s) => !r.stagesDone.includes(s)));
       } else {
         setStage(next);
       }
@@ -110,7 +124,7 @@ export function SessionRunner() {
     }
   };
 
-  if (allDone) return <Finished />;
+  if (allDone) return <Finished skipped={allDone} onPick={(s) => { setAllDone(null); setStage(s); }} />;
 
   const info = STAGE_META[stage];
 
@@ -155,19 +169,27 @@ export function SessionRunner() {
               {data?.themeZh ?? '今日主题'} · 约 {info.minutes} 分钟
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => load(stage, true)}
-            disabled={loading}
-            aria-label="重新生成这一环节"
-            className={cn(
-              'grid size-8 shrink-0 place-items-center rounded-lg text-[var(--text-dim)]',
-              'transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
-              'disabled:opacity-40',
-            )}
-          >
-            <RefreshCw className={cn('size-4', loading && 'animate-spin')} aria-hidden />
-          </button>
+          {/*
+            重新生成只留给新词环节。它换词是从词典按 CEFR 等级+词频取的，零 token、
+            几十毫秒；其余环节点一下就是重新调一次 AI，十几秒加几千 token ——
+            放个随手可点的图标在标题旁边，只会让人无意中反复花钱。
+            那些环节要换内容，明天自然是新的；真出错了 ErrorNote 上有重试。
+          */}
+          {stage === 'newwords' && (
+            <button
+              type="button"
+              onClick={() => load(stage, true)}
+              disabled={loading}
+              aria-label="换一批词"
+              className={cn(
+                'grid size-8 shrink-0 place-items-center rounded-lg text-[var(--text-dim)]',
+                'transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
+                'disabled:opacity-40',
+              )}
+            >
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} aria-hidden />
+            </button>
+          )}
         </header>
         {/*
           原来这里有一条逐段进度细线。有了侧栅/抽屉后它是重复信息，
@@ -228,7 +250,12 @@ function StageBody({
   }
 }
 
-function Finished() {
+/**
+ * 结束页。`skipped` 是走到口语时前面还没做的那几环 —— 一般是空的，
+ * 但第一天没有到期复习、或者从侧栏直接跳着做，就会剩下几个。
+ * 剩了就不说「走完了」，把它们列出来让人自己决定补不补。
+ */
+function Finished({ skipped, onPick }: { skipped: Stage[]; onPick: (s: Stage) => void }) {
   const [stats, setStats] = useState<{ streak: number; producedToday: number; reviewsToday: number } | null>(
     null,
   );
@@ -241,15 +268,43 @@ function Finished() {
   }, []);
 
   return (
-    <div className="flex flex-col items-center gap-5 py-16 text-center fade-up">
+    /*
+     * 自己收一个宽度上限（2026-08-29 修）。
+     *
+     * 这一屏的内容就是「一句话 + 三个读数 + 两个按钮」，是张贺卡。
+     * 但它挂在环节页的外层容器里，那层宽屏是 xl:max-w-[76rem]（1216px）——
+     * 给六个环节的双栏排版用的。结算页跟着一起变宽，于是卡片被抻到 1216，
+     * 三个数字相隔几百像素，按钮长得离谱（用户实测 2560px 视口）。
+     *
+     * 28rem 是照「读数卡三列还舒服、按钮不至于变成长条」定的，
+     * 和站里其它单栏内容（--content-w 52rem）不一样是故意的：那是正文宽度，
+     * 这里是一张卡片。
+     */
+    <div className="mx-auto flex max-w-[28rem] flex-col items-center gap-5 py-16 text-center fade-up">
       <PartyPopper className="size-10 text-[var(--accent-bar)]" aria-hidden />
       <div>
         {/* h1 本身已是衬线 700，这里只给字号 */}
-        <h1 className="text-[26px] leading-snug">今天的 30 分钟走完了</h1>
+        <h1 className="text-[26px] leading-snug">
+          {skipped.length ? '口语练完了' : '今天的 30 分钟走完了'}
+        </h1>
         <p className="mt-2.5 text-sm leading-relaxed dim">
-          明天这些词会换成新句子再来一次 —— 换了语境还认得，才是真记住了。
+          {skipped.length
+            ? '前面还剩几环没走，想补随时点；不补也算今天练过了。'
+            : '明天这些词会换成新句子再来一次 —— 换了语境还认得，才是真记住了。'}
         </p>
       </div>
+
+      {skipped.length > 0 && (
+        <Card className="w-full">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {skipped.map((s) => (
+              <Button key={s} variant="outline" size="sm" onClick={() => onPick(s)}>
+                去{STAGE_META[s].zh}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {stats && (
         <Card className="w-full">

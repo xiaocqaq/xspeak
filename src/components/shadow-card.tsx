@@ -58,7 +58,6 @@ export function ShadowCard({
       <div className="flex items-start gap-2">
         <p className="en flex-1 text-[16px] font-medium leading-relaxed text-[var(--text-title)]">{target}</p>
         <Speak text={target} />
-        <Speak text={target} slow label="慢速朗读" />
       </div>
       {zh && <p className="mt-1.5 text-xs dim">{zh}</p>}
 

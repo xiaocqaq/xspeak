@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /**
- * XLearn 设计系统 —— 纸感墨绿（参照 doc.xlingo.fun）
+ * xSpeak 设计系统 —— 纸感墨绿（参照 doc.xlingo.fun）
  *
  * 上一版是 iOS 玻璃质感（冷灰底 + systemBlue + 无衬线标题）。这一版换成阅读物的调性，
  * 四条规则贯穿整套 token，改之前先读一遍：
@@ -281,12 +281,32 @@ h4 {
   border: 1px solid var(--hairline);
   border-radius: 16px;
   box-shadow: var(--shadow-card);
+  /*
+   * min-width: 0 是布局正确性的一部分，不是保险（2026-08-29 实测定位）。
+   *
+   * 卡片几乎总是 flex/grid 项，而 flex/grid 项的 min-width 默认是 auto ——
+   * 「不许缩到内容最小宽以下」。卡片里只要有一处 `truncate`（含
+   * white-space: nowrap），那段文本的 min-content 就等于整行不折行的宽度，
+   * 于是卡片拒绝变窄、直接顶破轨道，整页出现横向滚动。
+   *
+   * 真实事故：新词卡的释义补成多义项后，「教练」变成
+   * 「n. 四轮大马车，教练；vt. 训练，指导；vi. 坐马车旅行，作指导」，
+   * 这一个 span 的 min-content = 386px，把 402px 视口的首页顶到 492px，
+   * 右边整列被裁（用户连报三次「首页被撑大」）。
+   *
+   * 修在这里而不是逐个组件加 min-w-0：站里 25+ 处用 .card，
+   * 每处都可能装进新的长文本，逐个补等于每次都要再踩一遍。
+   * 副作用为零 —— 卡片的宽度本来就该由所在轨道决定。
+   */
+  min-width: 0;
 }
 
 .card-solid {
   background: var(--surface-solid);
   border: 1px solid var(--hairline);
   border-radius: 16px;
+  /* 同 .card：它是别名，缺了这条会在别的页面重演同一个溢出 */
+  min-width: 0;
   box-shadow: var(--shadow-card);
 }
 

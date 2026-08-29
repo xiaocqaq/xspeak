@@ -5,21 +5,23 @@ import { THEME_COLORS, THEME_INIT_SCRIPT } from '@/lib/theme';
 import { withBase } from '@/lib/base-path';
 
 export const metadata: Metadata = {
-  title: { default: 'XLearn', template: '%s · XLearn' },
+  title: { default: 'xSpeak', template: '%s · xSpeak' },
   description: '每天 30 分钟，AI 陪你把英语真正用出来：单词、语法、听力、阅读、口语一条线走完。',
-  applicationName: 'XLearn',
+  applicationName: 'xSpeak',
   /*
    * metadata 里的路径 Next 不会自动加 basePath（只有 <Link>、_next 和 public 的直接引用会），
    * 所以这几个都得自己补。漏了的话子路径部署下 manifest 和图标会 404，PWA 直接装不上。
    */
   manifest: withBase('/manifest.webmanifest'),
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'XLearn' },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'xSpeak' },
   icons: {
     icon: [
       { url: withBase('/icons/icon-192.png'), sizes: '192x192', type: 'image/png' },
       { url: withBase('/icons/icon-512.png'), sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: withBase('/icons/icon-192.png'), sizes: '192x192' }],
+    // 指 apple-touch-icon.png 而不是 icon-192：那份是满幅不透明的方图，
+    // iOS 会自己套圆角遮罩，拿带圆角的 icon-192 去给它会出现双重圆角。
+    apple: [{ url: withBase('/icons/apple-touch-icon.png'), sizes: '180x180' }],
   },
   formatDetection: { telephone: false },
 };

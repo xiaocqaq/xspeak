@@ -284,3 +284,99 @@ export function Empty({
   );
 }
 
+/**
+ * 一句话的操作反馈，比如「已保存」。
+ *
+ * 为什么是 fixed 而不是塞在按钮旁边：它一出现就会参与 flex 分配，把按钮挤窄，
+ * 两秒后又消失、按钮再弹回来——一次保存看到两次跳动。反馈是临时的，
+ * 不该占据常驻布局的位置。
+ *
+ * 位置在底部居中、抬到 92px：设置页的保存条是 h-12 按钮 + p-2 = 64px，
+ * 从 bottom-4 起算占到 80px，再留 12px 缝，正好落在它上面不遮挡。
+ *
+ * `pointer-events-none` 是必须的：容器横跨整个视口宽度，否则它会吃掉
+ * 底部一条带子上的点击。role=status + aria-live=polite 让读屏软件念出来，
+ * 又不打断当前朗读。
+ */
+export function Toast({
+  message,
+  show,
+  tone = 'success',
+  place = 'bottom',
+}: {
+  message: string;
+  show: boolean;
+  tone?: 'success' | 'danger' | 'warn';
+  /**
+   * 竖向位置。
+   *
+   * bottom（默认）是「操作反馈」的位置 —— 贴着底部操作条，手指刚点完就在附近。
+   * top 给「正在进行中」的提示用：语音合成要等几秒，人这时候在看正文/题目，
+   * 提示压在屏幕底部容易被拇指挡住、也离视线焦点太远。
+   */
+  place?: 'bottom' | 'top';
+}) {
+  /*
+   * 配色跟着 Badge 的同名 tone 走，只有一处不同：暗色底不用 brand-900/50 而是实色。
+   * Badge 躺在纸面上，半透明能透出下面的层次；toast 浮在任意内容之上，
+   * 透出来的是正文，字就糊了。
+   *
+   * 文字用 brand-700 而不是 --success(#59a989)：后者配浅绿底对比度不够。
+   */
+  const tones = {
+    success: cn(
+      'border-brand-200 bg-brand-50 text-brand-700',
+      'dark:border-brand-800 dark:bg-brand-900 dark:text-brand-200',
+    ),
+    danger: cn(
+      'text-[var(--danger)]',
+      'border-[color-mix(in_srgb,var(--danger)_30%,transparent)]',
+      'bg-[color-mix(in_srgb,var(--danger)_12%,var(--surface))]',
+    ),
+    /*
+     * 浅黄 = 「在等一件事」，既不是成功也不是错误。用站里现成的 warm-* 刻度
+     * （站里 66 处 warm-* 都是这个语义），不新造颜色。
+     *
+     * 文字用 warm-700 而不是 warm-500：后者配 warm-50 底对比度只有 3:1 出头，
+     * 达不到 WCAG AA 的 4.5:1。暗色底反过来 —— 底用 warm-900、字用 warm-100。
+     */
+    warn: cn(
+      'border-warm-200 bg-warm-50 text-warm-700',
+      'dark:border-warm-800 dark:bg-warm-900 dark:text-warm-100',
+    ),
+  };
+  /*
+   * 中上方 = 顶栏之下再留 10vh。
+   *
+   * 不用固定 px：视口高度差很多（iPhone SE 到 iPad），固定值在小屏上会顶到
+   * 正文标题、在大屏上又显得贴着顶栏。顶栏高度本身是变量（手机 56、宽屏 68），
+   * 所以叠在它上面算，两种断点都不会压住导航。
+   */
+  const places = {
+    bottom: 'bottom-[92px]',
+    top: 'top-[calc(var(--topbar-h)+10vh)]',
+  };
+  return (
+    <div
+      className={cn(
+        'pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4',
+        places[place],
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      {show && (
+        <div
+          className={cn(
+            'fade-up rounded-full border px-3.5 py-1.5 text-[13px] font-semibold',
+            'shadow-[var(--shadow-lifted)]',
+            tones[tone],
+          )}
+        >
+          {message}
+        </div>
+      )}
+    </div>
+  );
+}
+
