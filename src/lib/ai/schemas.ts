@@ -2,6 +2,28 @@ import { z } from 'zod';
 
 /** 各环节 AI 输出的结构约束。前端直接按这些类型渲染。 */
 
+/*
+ * 所有测试题都是四选一。
+ *
+ * 原来语法有改错（fix）和中译英（translate）、阅读是开放式问答，都要自己写英文再
+ * 跟参考答案对照、自评对错。用户要求去掉这两类，只留单选和完型填空 —— 所以判题
+ * 从「自评」变成了「机器判」，错题本记的也是真选错的那一项，不再是自己说错了。
+ *
+ * 提取成一个共享定义而不是各处抄一遍：三个环节的题型现在完全一样，抄三遍迟早漂移。
+ * 听力本来就是这个形状且一直好用，所以这里照它写。
+ */
+const CHOICE_FIELDS = {
+  options: z.array(z.string()).length(4).describe('四个选项，长度接近、干扰项要合理'),
+  answer: z.string().describe('正确选项，必须和 options 里的某一项一字不差'),
+  explain_zh: z.string().describe('中文讲解：为什么是它，另外几个为什么不对'),
+};
+
+/** 四选一的题。题干用 q_zh。 */
+export const ChoiceQuestion = z.object({
+  q_zh: z.string().describe('中文问题'),
+  ...CHOICE_FIELDS,
+});
+
 export const ClozeItem = z.object({
   term: z.string().describe('要考的目标单词原形'),
   sentence_en: z.string().describe('含空格的英文句子，目标词位置用 ___ 代替'),
@@ -14,7 +36,8 @@ export const ClozeItem = z.object({
 
 export const WarmupPayload = z.object({
   intro_zh: z.string().describe('一句话开场，把今天主题和这批复习词联系起来'),
-  items: z.array(ClozeItem).min(1).describe('每个待复习单词一题，语境必须是全新的'),
+  /** 2026-08-28 混合题型：AI 完形只出前 AI_CLOZE_CAP 个，剩余词前端用零 AI 的释义单选补 */
+  items: z.array(ClozeItem).min(0).describe('每个待复习单词一题，语境必须是全新的'),
 });
 
 export const NewWord = z.object({
@@ -29,22 +52,42 @@ export const NewWord = z.object({
   collocations: z.array(z.string()).min(1).max(3).describe('最常用的搭配，如 place an order'),
 });
 
-export const NewWordsPayload = z.object({
-  intro_zh: z.string(),
-  words: z.array(NewWord).min(1),
+/*
+ * 这里原来有个 NewWordsPayload（intro_zh + 一整批 AI 选的词）。
+ * 选词改成走词典分级词表之后没人用了，删掉免得又被当成"新词环节的返回格式"。
+ * NewWord 本身留着 —— 导入材料时确实要 AI 从原文里挑词。
+ */
+
+/**
+ * 只补词典给不了的教学内容，不让 AI 选词。
+ *
+ * 和 NewWord 的差别是刻意的：term / meaning_zh 由调用方给定（AI 只是回抄，
+ * 用来对齐是哪个词），phonetic 不要 —— 词典的音标比 AI 编的准。
+ * 字段少一半，产出的 token 也少一半。
+ */
+export const WordDetail = z.object({
+  term: z.string().describe('必须和给定的词完全一致，不要改写、不要换成别的词'),
+  pos: z.string().describe('词性缩写，如 n. v. adj. phr.'),
+  meaning_en: z.string().describe('用更简单的英文解释，控制在 12 词内'),
+  example_en: z.string().describe('贴合今天主题的例句，一句话'),
+  example_zh: z.string().describe('例句的中文翻译'),
+  memory_hook_zh: z.string().describe('一句记忆抓手：词根、谐音、画面感或对比易混词，要具体'),
+  collocations: z.array(z.string()).min(1).max(3).describe('最常用的搭配，如 place an order'),
+});
+
+export const EnrichWordsPayload = z.object({
+  words: z.array(WordDetail).min(1),
 });
 
 export const GrammarExercise = z.object({
-  kind: z.enum(['choice', 'fix', 'translate']).describe('choice=选择 fix=改错 translate=中译英'),
-  question: z.string().describe('题干；fix 类型给出含错误的英文句子；translate 给中文'),
-  // fix / translate 题没有选项。要求模型显式给空数组它经常直接省略字段，
-  // 所以这里给个默认值：缺字段就当空数组，前端按 options.length 判断是否渲染选择题。
-  options: z
-    .array(z.string())
-    .default([])
-    .describe('仅 kind=choice 时给四个选项；fix / translate 不要给这个字段'),
-  answer: z.string().describe('参考答案'),
-  explain_zh: z.string().describe('讲清为什么，并指出中文母语者容易踩的点'),
+  /*
+   * 只剩这两种，都是四选一。
+   * cloze 的题干带 ___，choice 的题干是完整句子或提问 —— 差别只在题干长相，
+   * 判题逻辑一样。留着这个字段是因为它能让界面上的标签说得准一点。
+   */
+  kind: z.enum(['choice', 'cloze']).describe('choice=单选 cloze=完型填空（题干里用 ___ 留空）'),
+  question: z.string().describe('题干；kind=cloze 时必须含一个 ___'),
+  ...CHOICE_FIELDS,
 });
 
 export const GrammarPayload = z.object({
@@ -60,23 +103,22 @@ export const ListeningPayload = z.object({
     .array(
       z.object({
         speaker: z.string().describe('说话人名字，两三个人轮流'),
+        /*
+         * 前端一人一个嗓音，靠这个字段挑男声/女声。
+         * optional 是为了老缓存 —— 加这个字段之前生成的对话没有它，
+         * 缺了就退回按名字猜（见 useSpeech 的 buildVoiceCast）。
+         */
+        gender: z
+          .enum(['male', 'female'])
+          .optional()
+          .describe('这个说话人的性别，用来给他挑朗读嗓音；同一个人每句都要填一样的'),
         text_en: z.string(),
         text_zh: z.string(),
       }),
     )
     .min(4)
     .max(10),
-  questions: z
-    .array(
-      z.object({
-        q_zh: z.string(),
-        options: z.array(z.string()).length(4),
-        answer: z.string(),
-        explain_zh: z.string(),
-      }),
-    )
-    .min(2)
-    .max(4),
+  questions: z.array(ChoiceQuestion).min(2).max(4),
 });
 
 export const ReadingPayload = z.object({
@@ -88,11 +130,8 @@ export const ReadingPayload = z.object({
     .array(z.object({ term: z.string(), meaning_zh: z.string(), note_zh: z.string() }))
     .min(2)
     .describe('文中值得单独讲的词或短语'),
-  questions: z
-    .array(z.object({ q_zh: z.string(), answer_en: z.string(), explain_zh: z.string() }))
-    .min(2)
-    .max(3)
-    .describe('开放式问题，答案要能在文中找到依据'),
+  // 原来是开放式问答（自己写英文再对参考答案），按要求改成四选一
+  questions: z.array(ChoiceQuestion).min(2).max(3).describe('四选一，答案必须能在文中找到依据'),
 });
 
 export const SpeakingPayload = z.object({
@@ -138,6 +177,20 @@ export const CoachingPayload = z.object({
     })
     .describe('对学生这句话的纠正，语气温和'),
   used_target_words: z.array(z.string()).describe('学生这句话里真正用上的目标词，没有就空数组'),
+});
+
+/**
+ * 「试试这样说」提示，独立于 CoachingPayload。
+ *
+ * 提示要在 AI 说完话的瞬间就到（赶在学生开口之前），不能陪着回合后的完整分析
+ * 慢慢跑 —— 所以单独一个 schema、单独一个接口（/api/realtime/tip）、单独的
+ * 提示词（tipPrompt），只产出这一句话。
+ */
+export const TipPayload = z.object({
+  tip_en: z
+    .string()
+    .describe('给学生的下一句提示：一句他能直接照着说的简单英文，帮助对话继续或用上目标词'),
+  tip_zh: z.string().describe('tip_en 的中文意思'),
 });
 
 /** 查词 */
@@ -188,7 +241,6 @@ export const ScenariosPayload = z.object({
 });
 
 export type WarmupData = z.infer<typeof WarmupPayload>;
-export type NewWordsData = z.infer<typeof NewWordsPayload>;
 export type GrammarData = z.infer<typeof GrammarPayload>;
 export type ListeningData = z.infer<typeof ListeningPayload>;
 export type ReadingData = z.infer<typeof ReadingPayload>;
@@ -198,5 +250,9 @@ export type CoachingData = z.infer<typeof CoachingPayload>;
 export type LookupData = z.infer<typeof LookupPayload>;
 export type ExtractData = z.infer<typeof ExtractPayload>;
 export type NewWordData = z.infer<typeof NewWord>;
+export type WordDetailData = z.infer<typeof WordDetail>;
+export type EnrichWordsData = z.infer<typeof EnrichWordsPayload>;
 export type ScenariosData = z.infer<typeof ScenariosPayload>;
 export type ScenarioItemData = z.infer<typeof ScenarioItem>;
+export type ChoiceQuestionData = z.infer<typeof ChoiceQuestion>;
+export type GrammarExerciseData = z.infer<typeof GrammarExercise>;

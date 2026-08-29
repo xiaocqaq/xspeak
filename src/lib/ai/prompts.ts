@@ -72,17 +72,39 @@ export function warmupPrompt(ctx: Ctx, words: { term: string; meaning_zh: string
   ].join('\n');
 }
 
-export function newWordsPrompt(ctx: Ctx, existing: string[], count: number): string {
+/** 热身里 AI 完形题的数量上限：复习词多于这个数时，剩余的由前端用零 AI 的释义单选补（见 WarmupPayload）。 */
+export const WARMUP_AI_CLOZE_CAP = 8;
+
+/*
+ * 这里原来有个 newWordsPrompt：让 AI 挑今天该学哪些词。已经删了 ——
+ * 选词走 CEFR-J 的人工等级 + ECDICT 词频（见 repo/dictionary.ts 的 pickGradedWords），
+ * 那是人工分级的结果，比让 AI 每天现挑一遍又快又稳，还不花钱。
+ * 补教学内容的提示词在下面的 enrichWordsPrompt。
+ */
+
+/**
+ * 给已经定好的一批词补教学内容。
+ *
+ * 和 newWordsPrompt 的关键差别：**词是给定的，不许换**。选词已经交给
+ * CEFR 等级 + 词频了，这里让 AI 换词只会破坏分级。中文释义也一并给出，
+ * 免得 AI 按自己理解的义项造例句、和卡片上显示的释义对不上。
+ */
+export function enrichWordsPrompt(
+  ctx: Ctx,
+  words: { term: string; meaning_zh: string }[],
+): string {
   return [
-    `今天的主题是「${ctx.themeZh}」（${ctx.themeEn}）。这是新词环节。`,
+    `今天的主题是「${ctx.themeZh}」（${ctx.themeEn}）。学生水平 ${ctx.learner.level}。`,
     '',
-    `请挑出 ${count} 个这个场景下真正高频、开口就要用到的词或短语，难度贴近 ${ctx.learner.level}。`,
-    existing.length ? `以下词学生已经学过，不要重复：${existing.join(', ')}` : '',
+    `下面这 ${words.length} 个词已经定好了，请为**每一个**补充教学内容。`,
+    '不要替换任何词、不要增减、不要改写词形，term 原样回抄：',
+    ...words.map((w) => `- ${w.term}（${w.meaning_zh}）`),
     '',
-    '每个词都要给出：',
+    '每个词要给出：',
     '- memory_hook_zh：具体的记忆抓手。可以是词根拆解、发音联想、画面感、或和易混词的对比。禁止写"多读几遍就记住了"这种空话。',
     '- collocations：这个词最常一起出现的搭配，学生背了就能直接用。',
-    '- example_en：今天这个场景里真的会说出来的一句话。',
+    '- example_en：今天这个场景里真的会说出来的一句话，并给出 example_zh 翻译。',
+    '- 例句要贴合上面给的中文释义那个义项，一个词有多个意思时不要跑到别的义项上。',
     mistakeBlock(ctx.mistakes),
   ].join('\n');
 }
@@ -103,9 +125,22 @@ export function grammarPrompt(
     '',
     '要求：',
     '1. mini_lesson_zh 必须点明"中文会怎么说，英文必须怎么说"的差别。',
-    '2. exercises 要混合题型：至少一道改错（fix）、一道中译英（translate）。',
-    '3. 改错题的错误必须是中文母语者真会犯的，不要造不自然的错。',
-    '4. kind=choice 的题给四个 options；fix / translate 的题不要带 options 字段。',
+    /*
+     * 全部四选一：不要改错题，也不要中译英。
+     * 干扰项那条是重点 —— 不写清楚的话模型爱给三个明显不可能的选项，
+     * 题就变成了看一眼就能排除，练不到东西。
+     */
+    '2. exercises 全部是四选一，只用两种 kind：choice（单选）和 cloze（完型填空，题干里留一个 ___）。',
+    '   两种都要有，不要清一色。绝对不要出改错题、翻译题、或任何要自己写句子的题。',
+    '3. 干扰项必须是中文母语者真会选错的那种（时态、介词、单复数、词序），',
+    '   不要放明显不可能的选项。四个选项长度和形式要接近。',
+    '4. answer 必须和 options 里的某一项一字不差。explain_zh 要说清另外三个为什么不对。',
+    /*
+     * 5 是被真实数据逼出来的：模型爱在题干和选项后补「（中文翻译）」——
+     * am（是）、I am here…（我来这里开户。）——四个选项的翻译还一模一样，
+     * 纯噪音，选错题还泄露线索。中文只许出现在 explain_zh。
+     */
+    '5. question 和 options 一律纯英文，禁止在括号里附中文翻译；题目指令也用简单英文写（如 Which is correct?），中文只出现在 explain_zh。',
     mistakeBlock(ctx.mistakes),
   ].join('\n');
 }
@@ -120,6 +155,8 @@ export function listeningPrompt(ctx: Ctx, targetWords: string[]): string {
     `1. 语速和用词贴近 ${ctx.learner.level}，句子短，有口语里真实的停顿词（well, actually, you know 之类，别过量）。`,
     '2. 对话要有个小转折或小问题，不要一问一答的平铺直叙。',
     '3. 问题考细节和推断，不要只考"对话发生在哪里"。',
+    // 前端一人一个嗓音，靠 gender 挑男声女声，所以两三个人别都是同一个性别
+    '4. 每句都填 speaker 和 gender，同一个人前后必须一致；两个人对话时安排成一男一女，听起来更好分。',
   ].join('\n');
 }
 
@@ -134,6 +171,10 @@ export function readingPrompt(ctx: Ctx, targetWords: string[]): string {
     '要求：',
     '1. 写成有具体人物和细节的小故事或第一人称经历，不要写成百科说明文。',
     '2. glosses 里挑文中真正值得停下来讲的表达，说清它为什么这么用。',
+    // 阅读题原来是开放式问答，现在也是四选一
+    '3. questions 全部是四选一，选项用英文。不要出让学生自己写句子的开放题。',
+    '4. 考细节和推断，答案必须能在文中找到依据；干扰项要像是文里说过但其实没说的那种。',
+    '5. answer 必须和 options 里的某一项一字不差。explain_zh 要指出依据在原文哪一句。',
   ].join('\n');
 }
 
@@ -185,7 +226,18 @@ export function chatSystemPrompt(
  */
 export function coachingPrompt(
   l: Learner,
-  opts: { scenarioZh: string; targetWords: string[]; userText: string; history: string },
+  opts: {
+    scenarioZh: string;
+    targetWords: string[];
+    userText: string;
+    history: string;
+    /**
+     * 这句转写里有汉字。不代表学生说了中文 —— 上游那个识别模型是中文为主的，
+     * 把带中文口音的英文听成中文是它的常见失误（见 realtime/protocol.mjs 的 hasChinese）。
+     * 置位时下面多给模型一条说明，让它自己判断是哪一种，而不是硬凑一条语法纠正。
+     */
+    maybeMisheard?: boolean;
+  },
 ): string {
   return [
     systemPrompt(l),
@@ -205,6 +257,62 @@ export function coachingPrompt(
     '3. 没有值得纠的就把 has_issue 设为 false，corrected_en 原样返回他的话，note_zh 给一句简短鼓励。',
     `4. corrected_en 要贴近 ${l.level}，改成他这个水平真能说出口的样子，不要改写成高级表达。`,
     '5. used_target_words 只填他确实说出来的目标词，同义替换不算。',
+    /*
+     * 转写成中文时额外给的一条。
+     *
+     * 不在这里做硬拦截（早先版本是直接 return null，把整条纠正吞掉），因为本地
+     * 分不清「他说了中文」和「识别听错了」，而后者是用户实测里更常见的那一种。
+     * 交给模型判：能还原出英文原意就正常纠，还原不出来就说清楚是识别的问题。
+     */
+    opts.maybeMisheard
+      ? [
+          '',
+          '注意：这句转写里有汉字，但学生大概率说的是英文 —— 识别模型是中文为主的，' +
+            '经常把带中文口音的英文按发音凑成汉字（比如 "I think so" 转成「爱think搜」、' +
+            '"very good" 转成「维瑞古德」这类结果）。',
+          '- 如果能猜出他想说的英文是什么，就按那句英文来纠，corrected_en 给英文，note_zh 里点一句「识别可能听错了」。',
+          '- 如果猜不出来，把 has_issue 设为 false，corrected_en 留空字符串，' +
+            'note_zh 说明这句没听清、让他再说一遍，不要凭空编一条语法错误。',
+          '- 他要是真的在说中文，就把那句中文对应的英文写进 corrected_en，note_zh 鼓励他用英文说。',
+        ].join('\n')
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * 「试试这样说」的提示词（畅聊语音）。
+ *
+ * 时机和 coachingPrompt 完全不同：AI 刚说完话、轮到学生开口的那一两秒就要出结果，
+ * 所以单独一路 —— 不落库、不等回合后的完整分析，fast 模型只产这一句话。
+ * 输入里的「AI 刚说的话」来自中转层实转（此刻多半还没落库，查历史查不到它）。
+ */
+export function tipPrompt(
+  l: Learner,
+  opts: {
+    scenarioZh: string;
+    targetWords: string[];
+    assistantText: string;
+    history: string;
+  },
+): string {
+  return [
+    systemPrompt(l),
+    '',
+    '学生正在做口语畅聊练习。AI（对方）刚说完一句话，接下来轮到学生开口。',
+    '你要给学生一句他接下来可以照着说的英文，帮他把话接下去。',
+    '',
+    `情境：${opts.scenarioZh}`,
+    opts.targetWords.length ? `今天希望他说出口的词：${opts.targetWords.join(', ')}` : '',
+    opts.history ? `\n之前几轮：\n${opts.history}` : '',
+    '',
+    `AI 刚说：${opts.assistantText}`,
+    '',
+    '要求：',
+    `1. 给一句 ${l.level} 水平能直接照着说的简单英文：回应对方、向对方提问，或自然地把目标词用上。`,
+    '2. 一句就好，贴着 AI 刚说的内容接话，不要解释语法，不要写成旁白。',
+    '3. tip_zh 是它的中文意思，方便他先看懂再开口。',
   ]
     .filter(Boolean)
     .join('\n');

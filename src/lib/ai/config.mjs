@@ -41,6 +41,39 @@
  *   AI_FAST_PROVIDER=openai
  *   AI_FAST_BASE_URL=https://api.stepfun.com/v1
  *   AI_FAST_MODEL=step-3.5-flash
+ *
+ * ── 模型清单（可选，但设置页里能换模型靠的就是它）─────────────
+ *
+ * 上面那套是「一个角色一份配置」，改模型只能改文件。想在设置页里换，
+ * 就先在这里列出这台机器上有哪些模型可用，每个模型给一份地址 + key：
+ *
+ *   AI_MODELS                        逗号分隔的模型 id 清单，顺序就是设置页里的顺序
+ *   AI_MODEL_{ID}_LABEL              显示名，默认用 id
+ *   AI_MODEL_{ID}_PROVIDER           anthropic | openai，默认回落全局 AI_PROVIDER
+ *   AI_MODEL_{ID}_BASE_URL
+ *   AI_MODEL_{ID}_API_KEY
+ *   AI_MODEL_{ID}_MODEL              真正发给上游的模型名，默认就是 id 本身
+ *   AI_MODEL_{ID}_STRUCTURED         tool | json
+ *   AI_{角色}_MODEL_ID               这个角色默认挑清单里的哪一个
+ *
+ * `{ID}` 是 id 里的非字母数字换成下划线再转大写：`gpt-5.6-sol` → `GPT_5_6_SOL`。
+ *
+ * 例：三个模型任选，角色各给一个默认值
+ *   AI_MODELS=gpt-5.6-sol,claude-opus-5,deepseek-v4-flash
+ *   AI_MODEL_GPT_5_6_SOL_PROVIDER=openai
+ *   AI_MODEL_GPT_5_6_SOL_BASE_URL=https://api.example.com/v1
+ *   AI_MODEL_GPT_5_6_SOL_API_KEY=sk-...
+ *   AI_MODEL_CLAUDE_OPUS_5_PROVIDER=anthropic
+ *   AI_MODEL_CLAUDE_OPUS_5_API_KEY=sk-ant-...
+ *   AI_MODEL_DEEPSEEK_V4_FLASH_PROVIDER=openai
+ *   AI_MODEL_DEEPSEEK_V4_FLASH_BASE_URL=https://api.deepseek.com/v1
+ *   AI_MODEL_DEEPSEEK_V4_FLASH_API_KEY=sk-...
+ *   AI_CONTENT_MODEL_ID=claude-opus-5
+ *   AI_CHAT_MODEL_ID=gpt-5.6-sol
+ *   AI_FAST_MODEL_ID=deepseek-v4-flash
+ *
+ * 优先级：设置页存的选择 > AI_{角色}_MODEL_ID > 上面那套角色变量 > 内置默认。
+ * 设置页只能在这份清单里挑 —— 地址和 key 始终留在服务端，前端换不了。
  */
 
 /** 调用角色到环境变量中缀的映射。新增角色时同步补 DEFAULT_MODELS。 */
@@ -68,6 +101,13 @@ const DEFAULT_MODELS = {
     chat: 'gpt-4.1-mini',
     fast: 'gpt-4.1-mini',
   },
+  // chat/completions 那一路：默认模型和 Responses 同款 —— 走这条路的
+  // 多半是兼容端点，模型名由 AI_*_MODEL 指定，这里只是最后的兜底
+  'openai-completion': {
+    content: 'gpt-4.1',
+    chat: 'gpt-4.1-mini',
+    fast: 'gpt-4.1-mini',
+  },
 };
 
 function env(name) {
@@ -89,22 +129,156 @@ function parseProvider(raw, where) {
   if (!raw) return undefined;
   const v = raw.toLowerCase();
   if (v === 'anthropic' || v === 'claude') return 'anthropic';
-  // openai 协议的兼容实现太多了，都归到 openai 这一支
-  if (v === 'openai' || v === 'openai-compatible' || v === 'oai' || v === 'compatible') {
-    return 'openai';
+  /*
+   * openai 现在指 GPT 系原生的 Responses 协议（/responses）；
+   * chat/completions 那套保留为显式的 openai-completion —— 兼容端点
+   * （vLLM、Ollama、StepFun、老中转）只有这一条路，得能明确选它。
+   * 历史别名（openai-compatible/oai/compatible）沿用旧语义归 completion。
+   */
+  if (v === 'openai' || v === 'responses') return 'openai';
+  if (
+    v === 'openai-completion' ||
+    v === 'openai-compatible' ||
+    v === 'oai' ||
+    v === 'compatible'
+  ) {
+    return 'openai-completion';
   }
-  throw new Error(`${where} 只支持 anthropic 或 openai，收到 "${raw}"`);
+  throw new Error(`${where} 只支持 anthropic、openai 或 openai-completion，收到 "${raw}"`);
 }
 
 /**
+ * 模型 id → 环境变量中缀。`gpt-5.6-sol` → `GPT_5_6_SOL`。
+ *
+ * 非字母数字一律换下划线：id 是给人看和存库的，得允许点和横线，
+ * 但环境变量名里这些字符不合法。
+ */
+function envKeyFor(id) {
+  return id.replace(/[^a-zA-Z0-9]+/g, '_').toUpperCase();
+}
+
+/** AI_MODELS 里列出的 id，去空去重，保留书写顺序（设置页照这个顺序显示）。 */
+function catalogIds() {
+  const raw = env('AI_MODELS');
+  if (!raw) return [];
+  const out = [];
+  for (const part of raw.split(',')) {
+    const id = part.trim();
+    if (id && !out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * 清单里某一项的完整配置。
+ *
+ * 每一项都能只写一行（`AI_MODELS=claude-opus-5` + 全局 key），缺的往全局回落：
+ * provider / baseURL / key / structured 都能继承 AI_* 那一套，
+ * 模型名默认就是 id 本身 —— 清单里写的多半正是上游认的模型名。
+ */
+function catalogEntry(id) {
+  const K = envKeyFor(id);
+
+  const provider =
+    parseProvider(env(`AI_MODEL_${K}_PROVIDER`), `AI_MODEL_${K}_PROVIDER`) ??
+    parseProvider(env('AI_PROVIDER'), 'AI_PROVIDER') ??
+    'anthropic';
+
+  const baseURL =
+    pick(`AI_MODEL_${K}_BASE_URL`, 'AI_BASE_URL') ??
+    (provider === 'anthropic' ? env('ANTHROPIC_BASE_URL') : undefined);
+
+  const apiKey =
+    pick(`AI_MODEL_${K}_API_KEY`, 'AI_API_KEY') ??
+    (provider === 'anthropic' ? env('ANTHROPIC_API_KEY') : env('OPENAI_API_KEY')) ??
+    // openai 两种协议都可能是 StepFun 的地址，key 回退不该只认其中一种
+    (/stepfun\.com/i.test(baseURL ?? '') ? env('STEP_API_KEY') : undefined);
+
+  const rawStructured = pick(`AI_MODEL_${K}_STRUCTURED`, 'AI_STRUCTURED')?.toLowerCase();
+  if (rawStructured && rawStructured !== 'tool' && rawStructured !== 'json') {
+    throw new Error(`AI_MODEL_${K}_STRUCTURED 只支持 tool 或 json，收到 "${rawStructured}"`);
+  }
+
+  return {
+    id,
+    label: env(`AI_MODEL_${K}_LABEL`) ?? id,
+    provider,
+    model: env(`AI_MODEL_${K}_MODEL`) ?? id,
+    baseURL,
+    apiKey,
+    structured: rawStructured ?? 'tool',
+  };
+}
+
+/**
+ * 可选模型清单，给设置页和启动日志用。
+ *
+ * **不含 key** —— 这份结构会经 /api/models 出到浏览器。`ready` 表示这一项
+ * 有没有拿到密钥：没配 key 的项照样列出来但标成不可用，比直接藏起来好排查
+ * （用户会问「我明明写了怎么不见」）。
+ */
+export function modelCatalog() {
+  const out = [];
+  for (const id of catalogIds()) {
+    try {
+      const e = catalogEntry(id);
+      out.push({
+        id: e.id,
+        label: e.label,
+        provider: e.provider,
+        model: e.model,
+        baseURL: e.baseURL ? safeUrl(e.baseURL) : undefined,
+        ready: Boolean(e.apiKey),
+      });
+    } catch (err) {
+      // 单项配错（比如 provider 写了别的）不该让整份清单出不来
+      out.push({ id, label: id, provider: 'openai', model: id, ready: false, error: err.message });
+    }
+  }
+  return out;
+}
+
+/** 某个角色默认挑清单里的哪一项；没配返回 undefined。 */
+export function defaultModelId(role) {
+  return env(`AI_${ROLE_ENV[role]}_MODEL_ID`);
+}
+
+/** 已经提示过的 id，避免每次调用都重复刷同一行日志。 */
+const warnedMissing = new Set();
+
+/**
  * 解析某个角色最终用哪个模型。
+ *
+ * `modelId` 是设置页存下来的选择，只在它命中 AI_MODELS 清单时才生效 ——
+ * 清单是这台机器上「有地址有 key 的模型」的白名单，前端递上来的字符串
+ * 不能直接当模型名用，否则等于让浏览器决定往哪个端点发请求。
+ * 命中不了就当没选（清单被改小、或者那一项的 key 被撤了），回落到下面的角色变量。
  *
  * 每次调用都重新读 process.env，不缓存 —— 配置只在启动时定，
  * 读一次环境变量的开销远小于一次模型调用，换来的是改完 .env.local
  * 重启即生效，不用管有没有残留的模块级缓存。
  */
-export function resolveModel(role) {
+export function resolveModel(role, modelId) {
   const R = ROLE_ENV[role];
+
+  const wanted = modelId?.trim() || defaultModelId(role);
+  if (wanted) {
+    const ids = catalogIds();
+    if (ids.includes(wanted)) {
+      const e = catalogEntry(wanted);
+      if (e.apiKey) return { role, ...e };
+      throw new Error(
+        `${role} 角色选的模型 "${wanted}" 缺少密钥：请在 .env.local 里配 AI_MODEL_${envKeyFor(wanted)}_API_KEY`,
+      );
+    }
+    // 选的不在清单里：往下走老路径，但说一声，否则用户以为设置页生效了
+    if (!warnedMissing.has(wanted)) {
+      warnedMissing.add(wanted);
+      console.warn(
+        `[linxi ai] ${role} 角色指定的模型 "${wanted}" 不在 AI_MODELS 清单里，改用角色变量`,
+      );
+    }
+  }
 
   const provider =
     parseProvider(env(`AI_${R}_PROVIDER`), `AI_${R}_PROVIDER`) ??
@@ -125,8 +299,8 @@ export function resolveModel(role) {
     pick(`AI_${R}_API_KEY`, 'AI_API_KEY') ??
     (provider === 'anthropic' ? env('ANTHROPIC_API_KEY') : env('OPENAI_API_KEY')) ??
     // 地址指向 StepFun 时顺手认 STEP_API_KEY：语音那边已经配过同一把 key，
-    // 不逼着用户为同一个服务再填一遍。
-    (provider === 'openai' && /stepfun\.com/i.test(baseURL ?? '') ? env('STEP_API_KEY') : undefined);
+    // 不逼着用户为同一个服务再填一遍。openai 两种协议都可能指 StepFun。
+    (/stepfun\.com/i.test(baseURL ?? '') ? env('STEP_API_KEY') : undefined);
 
   if (!apiKey) {
     const hint =
@@ -143,6 +317,9 @@ export function resolveModel(role) {
 
   return {
     role,
+    // 没走清单，没有 id 可言。设置页据此显示「按配置文件」而不是硬挑一个选项
+    id: undefined,
+    label: model,
     provider,
     model,
     baseURL,
@@ -170,14 +347,30 @@ function safeUrl(raw) {
   }
 }
 
-/** 给启动日志用：能看出每一步走哪个模型，但不泄露 key。 */
+/**
+ * 给启动日志用：能看出每一步走哪个模型，但不泄露 key。
+ *
+ * 只反映配置文件。设置页里改过的选择存在库里，启动时不查库 ——
+ * 这行日志的用途是「.env.local 写对了吗」，掺进库里的值反而看不清是哪一层生效。
+ */
 export function describeModels() {
   const out = [];
+
+  const catalog = modelCatalog();
+  if (catalog.length) {
+    out.push(
+      `可选模型（AI_MODELS）：${catalog
+        .map((m) => `${m.id}${m.ready ? '' : '（缺 key）'}`)
+        .join('、')}`,
+    );
+  }
+
   for (const role of AI_ROLES) {
     try {
       const m = resolveModel(role);
       const at = m.baseURL ? ` @ ${safeUrl(m.baseURL)}` : '';
-      out.push(`${role}: ${m.provider}/${m.model}${at}`);
+      const from = m.id ? ` ←${m.id}` : '';
+      out.push(`${role}: ${m.provider}/${m.model}${at}${from}`);
     } catch (err) {
       out.push(`${role}: 未配置（${err.message}）`);
     }
