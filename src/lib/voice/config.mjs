@@ -23,6 +23,8 @@
  * 所以现有的 .env.local 不改也能跑。
  */
 
+import { DEFAULT_AI_VOICE } from '../voice-options.mjs';
+
 /** 读环境变量，空串当没配。 */
 function env(name) {
   const v = process.env[name];
@@ -51,7 +53,9 @@ const STEPFUN = {
   ttsUrl: 'https://api.stepfun.com/step_plan/v1/audio/speech',
   ttsModel: 'stepaudio-2.5-tts',
   asrModel: 'stepaudio-2.5-asr',
-  defaultVoice: 'jingdiannvsheng',
+  // 音色清单和默认值都在 voice-options.mjs，那边是唯一来源。
+  // 这里不再写死一个 id —— 写死过一次，结果和设置页显示的「当前」对不上。
+  defaultVoice: DEFAULT_AI_VOICE,
 };
 
 /**

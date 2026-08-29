@@ -18,7 +18,7 @@ import type { SpeechPace } from './types';
 
 /**
  * 存储键沿用旧前缀（项目曾叫 linxi）。
- * 改成 xlearn 会让已经存在用户浏览器里的语速偏好读不到，不值得为了命名一致耍丢它。
+ * 改成 xspeak.* 会让已经存在用户浏览器里的语速偏好读不到，不值得为了命名一致耍丢它。
  */
 const KEY = 'linxi.speechPace';
 /** storage 事件只跨标签页触发，同页内改动要靠自定义事件通知。 */

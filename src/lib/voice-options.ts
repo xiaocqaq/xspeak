@@ -6,15 +6,21 @@
 import {
   AI_VOICES as RAW_AI_VOICES,
   AI_VOICE_IDS as RAW_AI_VOICE_IDS,
+  AI_VOICE_GROUPS as RAW_AI_VOICE_GROUPS,
   PACES as RAW_PACES,
   PACE_KEYS as RAW_PACE_KEYS,
+  DEFAULT_AI_VOICE as RAW_DEFAULT_AI_VOICE,
   DEFAULT_PACE as RAW_DEFAULT_PACE,
   pace as rawPace,
 } from './voice-options.mjs';
 
 import type { SpeechPace } from './types';
 
-export type AiVoice = { id: string; zh: string; hint: string };
+export type AiVoiceGroupKey = 'female' | 'male';
+
+export type AiVoice = { id: string; zh: string; hint: string; group: AiVoiceGroupKey };
+
+export type AiVoiceGroup = { key: AiVoiceGroupKey; zh: string };
 
 export type PaceSpec = {
   zh: string;
@@ -31,6 +37,8 @@ export type PaceSpec = {
 
 export const AI_VOICES = RAW_AI_VOICES as AiVoice[];
 export const AI_VOICE_IDS = RAW_AI_VOICE_IDS as string[];
+export const AI_VOICE_GROUPS = RAW_AI_VOICE_GROUPS as AiVoiceGroup[];
+export const DEFAULT_AI_VOICE = RAW_DEFAULT_AI_VOICE as string;
 export const PACES = RAW_PACES as Record<SpeechPace, PaceSpec>;
 export const PACE_KEYS = RAW_PACE_KEYS as SpeechPace[];
 export const DEFAULT_PACE = RAW_DEFAULT_PACE as SpeechPace;
