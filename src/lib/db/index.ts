@@ -77,19 +77,95 @@ export function json(value: unknown): string {
 
 /* ---------- 用户 ---------- */
 
-/** 当前唯一用户（本地单人使用，固定 id=1；没有就建一条默认档案）。 */
+/** 上游身份里本地要用到的部分。完整结构见 src/lib/auth。 */
+export type ExternalIdentity = {
+  externalId: string;
+  username: string;
+  email: string;
+  displayName: string;
+};
+
+/**
+ * 单人模式的固定档案（没配 AUTH_UPSTREAM_URL 时走这条）。
+ *
+ * 保留它是为了本地开发和冒烟测试不用先起一套身份服务。
+ * 一旦配了上游，所有入口都会走 getOrCreateExternalUser。
+ */
 export async function getOrCreateUser(): Promise<UserProfile> {
   let row = await one<Record<string, unknown>>('SELECT * FROM users WHERE id = 1');
   if (!row) {
     await run(
       `INSERT INTO users (id, name, level, goal, interests, daily_minutes, new_words_per_day)
-       VALUES (1, '学习者', 'A1', 'daily_talk', '[]'::jsonb, 30, 8)
+       VALUES (1, '学习者', 'A1', 'daily_talk', '[]'::jsonb, 30, 10)
        ON CONFLICT (id) DO NOTHING`,
     );
     row = (await one<Record<string, unknown>>('SELECT * FROM users WHERE id = 1'))!;
   }
+  return toProfile(row, 1);
+}
+
+/**
+ * 上游身份 → 本地档案，一人一份。没有就新建。
+ *
+ * `adoptUserId` 处理升级路径：单人模式攒下的历史档案（默认 id=1，external_id 为 NULL）
+ * 让**第一个**登录的人接管，而不是变成一条谁都进不去的孤儿数据。之后再登录的人各建新档。
+ * 不想让任何人继承那份历史数据就设 AUTH_ADOPT_USER_ID=0。
+ *
+ * 整个过程在一个事务里，并且认领历史档案那句带 `external_id IS NULL` 条件 ——
+ * 两个人同时首次登录时，只有一个人的 UPDATE 会命中，另一个自然落到新建分支。
+ */
+export async function getOrCreateExternalUser(
+  identity: ExternalIdentity,
+  adoptUserId = 0,
+): Promise<UserProfile> {
+  const found = await one<Record<string, unknown>>('SELECT * FROM users WHERE external_id = ?', [
+    identity.externalId,
+  ]);
+  if (found) {
+    // 上游改了用户名/邮箱就跟着更新，但不动本地的 name —— 那是用户在引导里自己填的
+    if (
+      String(found.external_username ?? '') !== identity.username ||
+      String(found.external_email ?? '') !== identity.email
+    ) {
+      await run('UPDATE users SET external_username = ?, external_email = ? WHERE id = ?', [
+        identity.username,
+        identity.email,
+        Number(found.id),
+      ]);
+    }
+    return toProfile(found, Number(found.id));
+  }
+
+  return withTx(async (tx) => {
+    if (adoptUserId > 0) {
+      const adopted = await one<Record<string, unknown>>(
+        `UPDATE users
+            SET external_id = ?, external_username = ?, external_email = ?
+          WHERE id = ? AND external_id IS NULL
+          RETURNING *`,
+        [identity.externalId, identity.username, identity.email, adoptUserId],
+        tx,
+      );
+      if (adopted) return toProfile(adopted, Number(adopted.id));
+    }
+
+    const created = await one<Record<string, unknown>>(
+      `INSERT INTO users (name, level, goal, interests, daily_minutes, new_words_per_day,
+                          external_id, external_username, external_email)
+       VALUES (?, 'A1', 'daily_talk', '[]'::jsonb, 30, 10, ?, ?, ?)
+       RETURNING *`,
+      [identity.displayName || '学习者', identity.externalId, identity.username, identity.email],
+      tx,
+    );
+    if (!created) throw new Error('建用户档案失败');
+    return toProfile(created, Number(created.id));
+  });
+}
+
+/** users 行 → UserProfile。列的兜底逻辑集中在这里，两个入口共用。 */
+function toProfile(row: Record<string, unknown>, id: number): UserProfile {
   return {
-    id: 1,
+    id,
     name: String(row.name),
     level: String(row.level),
     goal: String(row.goal),
@@ -98,6 +174,7 @@ export async function getOrCreateUser(): Promise<UserProfile> {
     daily_minutes: Number(row.daily_minutes),
     new_words_per_day: Number(row.new_words_per_day),
     voice: (row.voice as string | null) ?? null,
+    voice_offline: (row.voice_offline as string | null) ?? null,
     ai_voice: (row.ai_voice as string | null) ?? null,
     // 老库刚补上列时可能是 null，也要防住手写进去的非法值
     speech_pace: normalizePace(row.speech_pace),

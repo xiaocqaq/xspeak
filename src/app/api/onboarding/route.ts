@@ -11,7 +11,7 @@ const Body = z.object({
   goal: z.enum(['daily_talk', 'reading', 'work', 'exam', 'travel']),
   interests: z.array(z.string().min(1).max(30)).max(12).default([]),
   dailyMinutes: z.number().int().min(5).max(180).default(30),
-  newWordsPerDay: z.number().int().min(2).max(40).default(8),
+  newWordsPerDay: z.number().int().min(2).max(100).default(10),
 });
 
 /** 首次进入时保存画像，之后每天的内容都按它生成。 */

@@ -38,7 +38,8 @@ const ReviewBody = z.object({
   mistakes: z
     .array(
       z.object({
-        kind: z.enum(['grammar', 'word_choice', 'spelling', 'style', 'pronunciation', 'listening']),
+        // reading 是后加的：阅读题从开放问答改成四选一之后，也能判对错了
+        kind: z.enum(['grammar', 'word_choice', 'spelling', 'style', 'pronunciation', 'listening', 'reading']),
         stage: z.string().optional(),
         wordId: z.number().int().positive().nullish(),
         grammarId: z.number().int().positive().nullish(),

@@ -38,6 +38,8 @@ export type UserProfile = {
   new_words_per_day: number;
   /** 浏览器 Web Speech 的语音包名字，给逐句朗读用 */
   voice: string | null;
+  /** 自建 Kokoro 音色（'kokoro:xx'），预生成第一梯队用。NULL=跟随默认 af_heart */
+  voice_offline: string | null;
   /** StepFun realtime 的音色 id，给畅聊用。和 voice 不通用 */
   ai_voice: string | null;
   speech_pace: SpeechPace;
@@ -55,7 +57,13 @@ export type WordRow = {
   theme: string | null;
   example_en: string | null;
   example_zh: string | null;
+  /** seed=内置词表 dict=离线词典 ai=AI 生成 lookup=查词时落库 */
   source: string;
+  /** 记忆抓手。一个词只问 AI 一次，之后从库里读 */
+  memory_hook_zh: string | null;
+  collocations: string[];
+  /** ECDICT 词频排名，越小越常用；0 表示未知 */
+  frq: number;
 };
 
 export type UserWordRow = {
@@ -118,6 +126,49 @@ export type MistakeRow = {
   times: number;
   resolved: number;
   created_at: string;
+};
+
+/**
+ * 一个可以点进去开聊的场景。
+ *
+ * 和 StartConfig 一样放在这里：生成它的路由、展示它的对话页、把它缓存下来的
+ * scenario-store 三边互不相识，谁 import 谁都会牵出多余的依赖。
+ */
+export type ChatScenario = {
+  zh: string;
+  hint: string;
+  aiRole: string;
+  openingEn: string;
+  openingZh: string;
+  /** 这个场景绑定的今日目标词，展示用 */
+  targetTerms: string[];
+  /** 对应的词 id，开对话时带上，说出口才算 produced */
+  targetWordIds: number[];
+};
+
+/**
+ * 开一段对话需要的全部信息。
+ *
+ * 放在这里而不是某个组件里：产生它的地方（对话页挑场景、口语环节、首页）
+ * 和消费它的地方（通话启动器）互不相识，让其中一方去 import 另一方的组件
+ * 只是为了拿个类型，反过来会把组件也一起拖进依赖图。
+ */
+export type StartConfig = {
+  title: string;
+  themeSlug?: string | null;
+  scenarioZh: string;
+  aiRole: string;
+  openingEn?: string | null;
+  openingZh?: string | null;
+  targetWordIds?: number[];
+  /**
+   * 目标词原文。
+   *
+   * 和 targetWordIds 并存不是冗余：id 用来落库和判定 produced_count，
+   * 而通话的 instructions 需要的是词本身 —— 中转层不查库，拿不到 id 对应的词。
+   */
+  targetTerms?: string[];
+  sessionId?: number | null;
 };
 
 export type StatsSummary = {

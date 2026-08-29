@@ -20,8 +20,10 @@ const PatchBody = z.object({
   goal: z.enum(['daily_talk', 'reading', 'work', 'exam', 'travel']).optional(),
   interests: z.array(z.string().max(30)).max(12).optional(),
   dailyMinutes: z.number().int().min(5).max(180).optional(),
-  newWordsPerDay: z.number().int().min(2).max(40).optional(),
+  newWordsPerDay: z.number().int().min(2).max(100).optional(),
   voice: z.string().max(120).nullish(),
+  // 自建 Kokoro 音色偏好（'kokoro:xx'）。预生成第一梯队 + 播放首选。
+  voiceOffline: z.string().max(120).nullish(),
   // 只收白名单里的音色 id：这个值会被原样发给上游 realtime，
   // 上游对未知音色是明确报错而不是降级，写进库就等于让畅聊直接连不上。
   aiVoice: z
@@ -49,6 +51,7 @@ export async function PATCH(req: Request) {
       ['dailyMinutes', 'daily_minutes'],
       ['newWordsPerDay', 'new_words_per_day'],
       ['voice', 'voice'],
+      ['voiceOffline', 'voice_offline'],
       ['aiVoice', 'ai_voice'],
       ['speechPace', 'speech_pace'],
     ];

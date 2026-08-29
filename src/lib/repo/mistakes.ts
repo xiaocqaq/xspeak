@@ -3,7 +3,7 @@ import type { MistakeBrief } from '@/lib/ai/prompts';
 import type { MistakeRow } from '@/lib/types';
 
 export type MistakeInput = {
-  kind: 'grammar' | 'word_choice' | 'spelling' | 'style' | 'pronunciation' | 'listening';
+  kind: 'grammar' | 'word_choice' | 'spelling' | 'style' | 'pronunciation' | 'listening' | 'reading';
   stage?: string;
   wordId?: number | null;
   grammarId?: number | null;
