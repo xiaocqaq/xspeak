@@ -70,7 +70,7 @@ server.on('upgrade', (req, socket, head) => {
 
 server.listen(port, hostname, () => {
   const voice = voiceConfig();
-  console.log(`▲ XLearn  http://${hostname}:${port}${basePath}`);
+  console.log(`▲ xSpeak  http://${hostname}:${port}${basePath}`);
   console.log(`  语音中转  ws://${hostname}:${port}${realtimePath}`);
   // 启动时把「实际会用哪家」打出来：这几个值全来自环境变量，
   // 配错了最容易在这里被看见，比等到用户点开畅聊再报错便宜得多。
@@ -83,4 +83,67 @@ server.listen(port, hostname, () => {
   for (const line of describeModels()) {
     console.log(`  模型      ${line}`);
   }
+
+  startDailyPrefresh(basePath);
 });
+
+/*
+ * 每天凌晨 4 点预生成当日学习任务（48h 内活跃用户）。
+ *
+ * 为什么长在 server.mjs 而不是系统 crontab：逻辑跟着应用走 —— 代码里
+ * 就是这一个部署单元，测试站/生产站各自跑各自的，不用在宿主机上再维护
+ * 一份"哪台机器、哪个端口、哪个前缀"的 crontab。
+ *
+ * 为什么用 HTTP 自调用而不是直接 import：今日任务的组装逻辑（getOrCreateToday、
+ * prewarmNewWords）在 Next 编译侧的 TS 里，server.mjs 是纯 JS 进不去那些模块。
+ * 回环请求是最诚实的路 —— 也顺带验证了整条 HTTP 链路可用。
+ *
+ * 时区：Date 按服务器本地时区（Asia/Shanghai）算"明天 4 点"，和
+ * sessions.day 的 localDay() 同一口径，不会错位。
+ */
+function startDailyPrefresh(basePath) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    console.warn('  ⚠ 没配 CRON_SECRET，凌晨 4 点的每日任务预生成不会跑（/api/internal/prefresh 禁用）');
+    return;
+  }
+
+  const runPrefresh = async () => {
+    const url = `http://${hostname}:${port}${basePath}/api/internal/prefresh`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ secret }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || body?.ok === false) {
+        console.warn(`[prefresh] 预生成失败：HTTP ${res.status}`, body?.error ?? '');
+        return;
+      }
+      const okCount = (body?.data?.results ?? []).filter((r) => r.ok).length;
+      console.log(`[prefresh] 每日任务预生成完成：${okCount}/${body?.data?.users ?? 0} 个用户`);
+    } catch (err) {
+      console.warn('[prefresh] 预生成请求出错：', err?.message ?? err);
+    }
+  };
+
+  // 下一次 04:00 的本地时间点
+  const nextAt = () => {
+    const t = new Date();
+    t.setHours(4, 0, 0, 0);
+    if (t.getTime() <= Date.now()) t.setDate(t.getDate() + 1);
+    return t;
+  };
+
+  const schedule = () => {
+    const when = nextAt();
+    const delay = when.getTime() - Date.now();
+    setTimeout(async () => {
+      await runPrefresh();
+      schedule(); // 跑完排明天的，不依赖 setInterval 的固定间隔
+    }, delay);
+    console.log(`[prefresh] 每日任务预生成已排程：${when.toLocaleString('zh-CN')}`);
+  };
+  schedule();
+}

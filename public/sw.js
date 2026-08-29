@@ -10,7 +10,12 @@
  * 注意：只在生产注册（见 components/sw-register.tsx），否则会跟 dev HMR 打架。
  */
 
-const VERSION = 'linxi-v1';
+/*
+ * 换图标/换字标必须动这个版本号：图标是同名替换（icons/icon-192.png 等），
+ * activate 里只删掉前缀不等于 VERSION 的缓存，版本不变的话装过的浏览器
+ * 会一直从 STATIC_CACHE 里拿旧图。缓存键是内部标识，所以用小写 xspeak。
+ */
+const VERSION = 'xspeak-v3';
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGE_CACHE = `${VERSION}-pages`;
 

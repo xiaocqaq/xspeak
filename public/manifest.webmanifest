@@ -1,6 +1,6 @@
 {
-  "name": "XLearn",
-  "short_name": "XLearn",
+  "name": "xSpeak",
+  "short_name": "xSpeak",
   "description": "每天 30 分钟，AI 陪你把英语真正用出来：单词、语法、听力、阅读、口语一条线走完。",
   "lang": "zh-CN",
   "start_url": "./",

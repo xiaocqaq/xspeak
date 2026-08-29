@@ -28,3 +28,10 @@ coverage/
 
 # ECDICT 导入缓存（63MB，用 npm run dict:import 重新下载）
 ecdict.csv
+
+# CEFR-J / Octanove 分级表的下载缓存（用 npm run levels:import 重新下载）
+cefrj-1.5.csv
+octanove-c1c2-1.0.csv
+
+# TTS 合成结果的磁盘缓存（KOKORO_CACHE_DIR）
+/.cache/

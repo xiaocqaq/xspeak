@@ -7,10 +7,17 @@
  *   npm run smoke
  *   BASE=http://127.0.0.1:3001 npm run smoke
  *   npm run smoke -- --fast  # 跳过烧 token 的 AI 环节，只测 CRUD
+ *
+ * 服务端开了鉴权（配了 AUTH_UPSTREAM_URL）时，所有接口都要登录态，
+ * 所以要给它一对账号密码：
+ *   SMOKE_USER=xxx SMOKE_PASS=xxx npm run smoke -- --fast
+ * 不给的话第一步就会说清楚缺什么，而不是让后面二十个用例一起报 401。
  */
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:3000';
 const FAST = process.argv.includes('--fast');
+const USER = process.env.SMOKE_USER ?? '';
+const PASS = process.env.SMOKE_PASS ?? '';
 
 let pass = 0;
 let fail = 0;
@@ -19,12 +26,45 @@ const failures = [];
 const t0 = Date.now();
 const ms = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
 
+/**
+ * 手搓的 cookie jar。
+ *
+ * Node 的 fetch 不带 cookie 存储，而登录态就是靠 cookie 传的 ——
+ * 不自己存的话登录成功也没用，下一个请求还是匿名的。
+ * 只存 name=value，不管 Domain/Path/Expires：这里就打一个 origin，够用。
+ */
+const jar = new Map();
+
+function stashCookies(res) {
+  const list = res.headers.getSetCookie?.() ?? [];
+  for (const line of list) {
+    const [pair] = line.split(';');
+    const eq = pair.indexOf('=');
+    if (eq <= 0) continue;
+    const name = pair.slice(0, eq).trim();
+    const value = pair.slice(eq + 1).trim();
+    // 退出登录是靠把值置空来实现的，那种要删掉而不是存个空串
+    if (!value) jar.delete(name);
+    else jar.set(name, value);
+  }
+}
+
+function cookieHeader() {
+  if (!jar.size) return undefined;
+  return [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
 async function call(method, path, body) {
+  const cookie = cookieHeader();
   const res = await fetch(BASE + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(cookie ? { cookie } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
+  stashCookies(res);
   const text = await res.text();
   let json;
   try {
@@ -63,6 +103,39 @@ await step('服务在跑', async () => {
   const res = await fetch(BASE + '/api/session/today');
   assert(res.status < 500 || res.status === 500, `连不上：HTTP ${res.status}`);
 });
+
+/*
+ * 登录（只在服务端开了鉴权时）。
+ *
+ * 这一步失败就没必要往下跑：后面每个用例都会 401，二十行同样的报错
+ * 只会把真正的原因埋掉。所以这里直接退出，并把原因说明白。
+ */
+const authState = await step('鉴权状态', async () => {
+  const d = await call('GET', '/api/auth/session');
+  console.log(d.authEnabled ? '\n    已开启，需要登录' : '\n    未开启（单人模式）');
+  return d;
+});
+
+if (authState?.authEnabled) {
+  if (!USER || !PASS) {
+    console.error(
+      '\n服务端开了鉴权，但没给账号。\n' +
+        '  SMOKE_USER=<用户名或邮箱> SMOKE_PASS=<密码> npm run smoke -- --fast\n',
+    );
+    process.exit(1);
+  }
+  await step('登录', async () => {
+    const d = await call('POST', '/api/auth/login', { username: USER, password: PASS });
+    // 开了两步验证的账号没法用在自动化里 —— 验证码拿不到，说清楚比卡住好
+    assert(!d.twoFactorRequired, '这个账号开了两步验证，冒烟测试用不了。换一个没开的账号。');
+    assert(jar.size > 0, '登录成功但没收到 cookie，检查 writeSession 的 path 是否和 BASE 对得上');
+    console.log(`\n    登录为 ${d.user?.displayName || USER}`);
+  });
+  if (fail > 0) {
+    console.error('\n登录失败，后面的用例都会 401，先退出。\n');
+    process.exit(1);
+  }
+}
 
 const today = await step('GET /api/session/today', async () => {
   const d = await call('GET', '/api/session/today');
@@ -120,10 +193,10 @@ await step('PATCH /api/profile（音色 + 语速）', async () => {
 });
 
 await step('POST /api/voice/preview（音色试听）', async () => {
-  // 这条不走 call()：返回的是 mp3 而不是 JSON
+  // 这条不走 call()：返回的是 mp3 而不是 JSON。cookie 得自己带上
   const res = await fetch(BASE + '/api/voice/preview', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(cookieHeader() ? { cookie: cookieHeader() } : {}) },
     body: JSON.stringify({ voice: 'jingdiannvsheng', paceKey: 'normal' }),
   });
   assert(res.ok, `试听失败（HTTP ${res.status}）`);
@@ -133,10 +206,70 @@ await step('POST /api/voice/preview（音色试听）', async () => {
 
   const bad = await fetch(BASE + '/api/voice/preview', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(cookieHeader() ? { cookie: cookieHeader() } : {}) },
     body: JSON.stringify({ voice: 'yingwennvsheng' }),
   });
   assert(!bad.ok, '非白名单音色没被拒');
+});
+
+/*
+ * 逐句朗读的服务端音频（自建 Kokoro）。没配 KOKORO_TTS_URL 的部署回 503，
+ * 那不是失败 —— 前端会退回浏览器语音包。所以 503 记成"跳过"。
+ *
+ * 这条不走 call()：返回 mp3 而不是 JSON，而且是 GET（见 api/speak 顶部注释）。
+ */
+await step('GET /api/speak（本站朗读音色）', async () => {
+  const ck = () => (cookieHeader() ? { cookie: cookieHeader() } : {});
+  // 每次跑用不同文本，才能真的走一遍"未命中→合成→写缓存→命中"，
+  // 而不是永远读上一次跑留下的缓存文件
+  const text = `smoke test ${Date.now()}`;
+  const q = `text=${encodeURIComponent(text)}&voice=af_heart&pace=normal`;
+
+  const probe = await fetch(`${BASE}/api/speak?${q}`, { headers: ck() });
+  if (probe.status === 503) {
+    console.log('\n    没配 KOKORO_TTS_URL，跳过');
+    return;
+  }
+  // body 只能读一次，所以不能把 probe.text() 写进 assert 的消息里
+  // —— 那个模板串是无条件先算的，成功路径上也会把 body 读空
+  if (!probe.ok) throw new Error(`合成失败（HTTP ${probe.status}）：${(await probe.text()).slice(0, 160)}`);
+  assert(probe.headers.get('content-type')?.includes('audio'), '返回的不是音频');
+  assert(probe.headers.get('x-tts-cache') === 'miss', '新文本却报缓存命中，缓存键可能没算进文本');
+  const size = (await probe.arrayBuffer()).byteLength;
+  // 空音频那个坑（上游对某些短句回 44 字节的纯 ID3 头）就是靠这条拦住的
+  assert(size > 2000, `音频太小（${size} 字节），可能是空响应`);
+
+  // 第二次必须命中磁盘缓存，否则缓存整个没生效 —— 那台机器 2 核，
+  // 每次现合成 1.5s 起，命中与否是这个功能能不能用的分界
+  const again = await fetch(`${BASE}/api/speak?${q}`, { headers: ck() });
+  assert(again.ok, `第二次请求失败（HTTP ${again.status}）`);
+  assert(again.headers.get('x-tts-cache') === 'hit', '第二次没命中缓存');
+  const etag = again.headers.get('etag');
+  assert(etag, '没回 etag，浏览器侧缓存会失效');
+
+  // 304：命中浏览器缓存时连磁盘都不该读
+  const nm = await fetch(`${BASE}/api/speak?${q}`, { headers: { ...ck(), 'if-none-match': etag } });
+  assert(nm.status === 304, `带 If-None-Match 应该回 304，实际 ${nm.status}`);
+
+  // Range：iOS Safari 播 <audio> 前会先探一刀，不按 206 回可能整个不播
+  const rng = await fetch(`${BASE}/api/speak?${q}`, { headers: { ...ck(), range: 'bytes=0-99' } });
+  assert(rng.status === 206, `Range 请求应该回 206，实际 ${rng.status}`);
+  assert((await rng.arrayBuffer()).byteLength === 100, 'Range 回的字节数不对');
+
+  // HEAD 是前端判断"这句能不能立刻用好声音播"的依据：命中 200、未命中 404
+  const head = await fetch(`${BASE}/api/speak?${q}`, { method: 'HEAD', headers: ck() });
+  assert(head.status === 200, `HEAD 已缓存的文本应该 200，实际 ${head.status}`);
+  const cold = await fetch(`${BASE}/api/speak?text=never-synthesized-${Date.now()}&voice=af_heart`, {
+    method: 'HEAD',
+    headers: ck(),
+  });
+  assert(cold.status === 404, `HEAD 没缓存的文本应该 404，实际 ${cold.status}`);
+
+  // 白名单和限长。这个接口拿服务端的 key 去调 TTS，不能让任意字符串透传
+  const evil = await fetch(`${BASE}/api/speak?text=hi&voice=evil`, { headers: ck() });
+  assert(evil.status === 400, `未知音色应该 400，实际 ${evil.status}`);
+  const long = await fetch(`${BASE}/api/speak?text=${'a'.repeat(400)}&voice=af_heart`, { headers: ck() });
+  assert(long.status === 413, `超长文本应该 413，实际 ${long.status}`);
 });
 
 // 注意：/api/words 返回的是"我的生词本"（已加入学习的词，SQL 里是 JOIN user_words），
@@ -166,6 +299,51 @@ await step('GET /api/grammar（语法库）', async () => {
   const d = await call('GET', '/api/grammar');
   assert(d.items.length > 0, '语法库是空的');
   assert(d.items[0].pitfalls !== undefined, '语法点缺 pitfalls 字段');
+});
+
+await step('GET/PATCH /api/models（模型设置）', async () => {
+  const d = await call('GET', '/api/models');
+  assert(Array.isArray(d.catalog), 'catalog 不是数组');
+  assert(d.roles?.length === 3, `角色应该有 3 个，实际 ${d.roles?.length}`);
+  // 这个结构会出到浏览器，绝不能带密钥。整段翻一遍字符串最直接
+  assert(!/sk-|api[_-]?key/i.test(JSON.stringify(d)), '响应里出现了疑似密钥的内容');
+  for (const r of d.roles) {
+    assert(r.effective || r.error, `${r.role} 既没解析出模型也没给错误原因`);
+  }
+
+  // 清单外的 id 必须被服务端拒掉：这个值来自浏览器，放行等于让前端指定端点
+  let rejected = false;
+  try {
+    await call('PATCH', '/api/models', { role: 'chat', modelId: 'definitely-not-configured' });
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, '清单外的模型 id 被接受了，白名单校验失效');
+
+  const ready = d.catalog.find((m) => m.ready);
+  if (ready) {
+    const before = d.roles.find((r) => r.role === 'fast')?.selected ?? null;
+    const after = await call('PATCH', '/api/models', { role: 'fast', modelId: ready.id });
+    assert(
+      after.roles.find((r) => r.role === 'fast')?.selected === ready.id,
+      '选择没存进去',
+    );
+    /*
+     * PATCH 必须回和 GET 一样的形状。设置页是 setData(await apiPatch(...))，
+     * 整个状态换成响应体 —— 少一个 voice 就把已经渲染着的那块抽走，
+     * 点一下换模型整张卡片炸掉而库其实写成功了。真出过一次，所以在这儿钉住。
+     */
+    assert(
+      JSON.stringify(Object.keys(after).sort()) === JSON.stringify(Object.keys(d).sort()),
+      `PATCH 和 GET 的字段不一样：GET ${Object.keys(d).sort()} / PATCH ${Object.keys(after).sort()}`,
+    );
+    assert(after.voice?.provider, 'PATCH 响应里没有 voice.provider');
+    await call('PATCH', '/api/models', { role: 'fast', modelId: before }); // 还原
+  } else {
+    // 没配 AI_MODELS 时清单是空的，这不算失败 —— 那种部署就是「只跟配置文件」
+    console.log('\n    没配 AI_MODELS，跳过换模型的往返');
+    process.stdout.write('    ');
+  }
 });
 
 await step('GET /api/stats（统计）', async () => {
@@ -271,7 +449,17 @@ if (!FAST) {
   await step('POST /api/words/lookup（查词）', async () => {
     const d = await call('POST', '/api/words/lookup', { term: 'commute' });
     assert(d.meaning_zh, '没返回中文释义');
-    assert(d.examples?.length >= 2, '例句不够');
+    assert(['library', 'dict', 'ai'].includes(d.source), `source 不认识：${d.source}`);
+    /*
+     * 例句只对 AI 那条路要求两条。库里和词典命中时给不出真例句
+     * （路由里是故意返回空数组的，见 lookup/route.ts 的 fromDict），
+     * 这里跟着分开判 —— 否则常用词永远走词典，这条断言就永远挂。
+     */
+    if (d.source === 'ai') {
+      assert(d.examples?.length >= 2, `AI 查词的例句不够：${d.examples?.length ?? 0}`);
+    } else {
+      assert(Array.isArray(d.examples), 'examples 得是数组，前端直接 map');
+    }
   });
 
   await step('POST /api/chat/scenarios（场景生成）', async () => {
