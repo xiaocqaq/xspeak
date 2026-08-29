@@ -17,8 +17,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SAMPLE_RATE, REALTIME_PATH, type Correction, type ServerToClient } from '@/lib/realtime/protocol';
-import { withBase } from '@/lib/base-path';
+import {
+  INPUT_SAMPLE_RATE,
+  OUTPUT_SAMPLE_RATE,
+  REALTIME_PATH,
+  type Correction,
+  type ServerToClient,
+} from '@/lib/realtime/protocol';
+import { BASE_PATH, withBase } from '@/lib/base-path';
 import { pace } from '@/lib/voice-options';
 import type { SpeechPace } from '@/lib/types';
 
@@ -30,6 +36,11 @@ export type VoiceTurn = {
   /** 只有 user 回合会有：异步补上来的纠正 */
   correction?: Correction | null;
   usedTerms?: string[];
+  /**
+   * 这句是中文说的。中转层判的（识别层锁不住语言），前端拿它做两件事：
+   * 提示学生换英文，以及别再等永远不会来的纠正 —— 中文回合不跑纠错分析。
+   */
+  zh?: boolean;
 };
 
 export type VoiceStatus = 'idle' | 'connecting' | 'ready' | 'listening' | 'thinking' | 'speaking' | 'error';
@@ -47,8 +58,20 @@ const VAD = {
   silenceRms: 0.008,
   /** 连续静音多久算这句说完了。太短会切断句中停顿，太长则等得难受。 */
   silenceMs: 900,
-  /** 一句话至少要这么长才提交，滤掉咳嗽、桌子响之类的单次噪声。 */
-  minSpeechMs: 350,
+  /**
+   * 一句话里「真的有声音」的时长至少要够这么久才提交，滤掉咳嗽、桌子响之类的单次噪声。
+   *
+   * 注意量的是有声时长（vadRef.voicedMs 累加），不是从开口到提交的墙上时间。
+   * 早先这里按墙上时间判（`spoken >= minSpeechMs`），那个条件永远为真 ——
+   * 提交的前提是静音已经攒够 silenceMs=900，而静音段本身就算在 spoken 里，
+   * 所以 spoken 必然 > 900 > 350，门槛形同不存在，一声咳嗽就能开一整个回合。
+   *
+   * 定 700ms 是照着上游的下限来的：实测 400/680/700ms 的音频提交上去会被
+   * ASR 以 HTTP 400 "no speech found" 打回，1000ms 以上才正常出转写。有声 700ms
+   * 的一句话，加上前后的 preroll 和静音尾巴，送上去的总时长稳稳过 1 秒。
+   * 再往上抬会开始吃掉 "Yeah." "Me too." 这类真话（实测有声约 0.7–1.0s）。
+   */
+  minVoicedMs: 700,
   /** 一句话最长录这么久就强制提交，避免一直说没有尽头。 */
   maxSpeechMs: 30_000,
   /**
@@ -157,10 +180,25 @@ export function useVoiceChat() {
   const [status, setStatus] = useState<VoiceStatus>('idle');
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * 不致命的提醒（现在只有「音色没按设置生效」一种）。
+   * 和 error 分开：通话还能继续，不能让它把面板打成错误态。
+   */
+  const [notice, setNotice] = useState<string | null>(null);
   /** AI 正在说的这句话的实时文本 */
   const [partial, setPartial] = useState('');
   /** 学生主动闭麦（想歇一会儿、或者环境太吵） */
   const [muted, setMutedState] = useState(false);
+  /**
+   * 「试试这样说」提示。forTurn 是回合序号（中转层发的递增数）：
+   * 学生开口说了新的一句、提示还没换之前，界面据此淡化旧提示。
+   */
+  const [tip, setTip] = useState<{ en: string; zh: string; forTurn: number } | null>(null);
+  /**
+   * 用户手动关掉了提示。放 ref 是因为 tip/coaching 消息的处理在 ws 回调里跑，
+   * 那里读不到 state 快照。关掉是会话级的选择 —— 挂断重拨回到默认开。
+   */
+  const tipsOffRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const micRef = useRef<{ ctx: AudioContext; stream: MediaStream; node: ScriptProcessorNode } | null>(null);
@@ -199,6 +237,13 @@ export function useVoiceChat() {
     /** 最近一次听到声音的时刻，用来算静音时长 */
     lastVoiceAt: 0,
     /**
+     * 这句话里「有声」的累计时长（ms），按片累加，静音的片不算。
+     *
+     * 必须和 startedAt 分开记：从开口到提交的墙上时间里有 900ms 是静音尾巴，
+     * 拿它跟噪声门槛比永远过关（见 VAD.minVoicedMs 的注释）。
+     */
+    voicedMs: 0,
+    /**
      * 说话前的一小段音频。VAD 要攒够能量才确认「开口了」，
      * 那之前的几十毫秒（往往是单词的第一个辅音）不能丢，否则识别会吃字。
      */
@@ -232,14 +277,15 @@ export function useVoiceChat() {
   const playChunk = useCallback((b64: string) => {
     if (!playRef.current) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      playRef.current = { ctx: new Ctor({ sampleRate: SAMPLE_RATE }), cursor: 0 };
+      playRef.current = { ctx: new Ctor({ sampleRate: OUTPUT_SAMPLE_RATE }), cursor: 0 };
     }
     const { ctx } = playRef.current;
     void ctx.resume();
 
     const pcm = pcm16Base64ToFloat(b64);
     if (!pcm.length) return;
-    const buf = ctx.createBuffer(1, pcm.length, SAMPLE_RATE);
+    // 第三个参数决定音调和时长：必须是上游真实的下行频率，不是上行的 16000。
+    const buf = ctx.createBuffer(1, pcm.length, OUTPUT_SAMPLE_RATE);
     buf.copyToChannel(pcm, 0);
 
     const src = ctx.createBufferSource();
@@ -375,8 +421,10 @@ export function useVoiceChat() {
       // 刚说完、还在等回声散去的窗口里也不采集
       if (!openMicRef.current) return;
 
-      const pcm = downsample(raw, ctx.sampleRate, SAMPLE_RATE);
+      const pcm = downsample(raw, ctx.sampleRate, INPUT_SAMPLE_RATE);
       const b64 = floatToPcm16Base64(pcm);
+      // 这一片音频有多长。按 raw 的实际长度算，不写死 —— 采样率是设备给的。
+      const chunkMs = (raw.length / ctx.sampleRate) * 1000;
 
       if (!v.speaking) {
         // 还没开口：先攒前导缓冲，够响了再算这句话的开始
@@ -387,6 +435,8 @@ export function useVoiceChat() {
           v.speaking = true;
           v.startedAt = now;
           v.lastVoiceAt = now;
+          // 触发开口的这一片本身就是有声的，要算进去
+          v.voicedMs = chunkMs;
           setStatus('listening');
           // 把开口前那几十毫秒一起送出去，否则首个辅音会被吃掉
           for (const chunk of v.preroll) {
@@ -399,21 +449,40 @@ export function useVoiceChat() {
 
       // 正在说：一律送，句中的短暂停顿也要保留，不然听起来是断的
       ws.send(JSON.stringify({ type: 'audio', audio: b64 }));
-      if (level > VAD.silenceRms) v.lastVoiceAt = now;
+      if (level > VAD.silenceRms) {
+        v.lastVoiceAt = now;
+        v.voicedMs += chunkMs;
+      }
 
       const spoken = now - v.startedAt;
       const quietFor = now - v.lastVoiceAt;
       // 静音够久 = 这句说完了；说太久则强制断一次，避免没有尽头
-      const done =
-        (quietFor >= VAD.silenceMs && spoken >= VAD.minSpeechMs) || spoken >= VAD.maxSpeechMs;
+      const done = quietFor >= VAD.silenceMs || spoken >= VAD.maxSpeechMs;
       if (!done) return;
 
       v.speaking = false;
       v.preroll = [];
-      if (spoken < VAD.minSpeechMs) {
-        // 太短，当噪声丢掉，不去打扰上游
+      if (v.voicedMs < VAD.minVoicedMs) {
+        /*
+         * 有声的部分太短，当噪声丢掉，不提交。
+         *
+         * 这一段是真的会走到的：一声咳嗽、桌子响、椅子挪一下，能量足够越过
+         * speakRms 开一个回合，但有声时长只有一两百毫秒。提交上去的后果不是
+         * 「多一句空转写」而是整通电话挂掉 —— 上游对不足约 1 秒的音频回
+         * HTTP 400 "no speech found"，中转层把它当错误转给前端，前端的
+         * error 分支是终态。现在中转层那边也认了这个串（见 relay.mjs），
+         * 两道一起兜，这边能拦下的就不要送上去。
+         *
+         * 已经送出去的音频片不用管：下一次 commit 之前上游缓冲区里是这些噪声，
+         * 但真话来的时候它们只是前面多一小段环境音，识别不受影响。
+         * 中转层没有 input_audio_buffer.clear 这条路，想清缓冲只能靠提交，
+         * 而提交正是这里要避免的。
+         */
+        v.voicedMs = 0;
+        setStatus('ready');
         return;
       }
+      v.voicedMs = 0;
       // 提交这一句并等回应。等 AI 说完再开麦，避免自问自答。
       openMicRef.current = false;
       // 新回合开始，上一次抢话留下的「丢弃残余音频」标志到此为止，
@@ -439,6 +508,7 @@ export function useVoiceChat() {
     (opts: StartOpts) =>
       new Promise<void>((resolve, reject) => {
         setError(null);
+        setNotice(null);
         setStatus('connecting');
 
         // 每次连接分配一个代次。React 严格模式下组件会挂载两次（挂载→清理→再挂载），
@@ -495,7 +565,10 @@ export function useVoiceChat() {
             case 'user_transcript': {
               const key = `u${Date.now()}`;
               lastUserKey.current = key;
-              setTurns((t) => [...t, { key, role: 'user', text: msg.text, correction: null, usedTerms: [] }]);
+              setTurns((t) => [
+                ...t,
+                { key, role: 'user', text: msg.text, correction: null, usedTerms: [], zh: msg.zh },
+              ]);
               setStatus('thinking');
               break;
             }
@@ -533,6 +606,15 @@ export function useVoiceChat() {
               resumeMic();
               break;
 
+            case 'tip':
+              // 「试试这样说」：AI 刚说完话、轮到学生开口，这时候到的提示就是
+              // 为他下一句准备的。tip 为 null（这次没生成出来）保持原样不闪空卡。
+              // 中转层已按回合序号挡掉过时结果，这里照单全收最新的。
+              if (msg.tip && !tipsOffRef.current) {
+                setTip({ ...msg.tip, forTurn: msg.turn });
+              }
+              break;
+
             case 'coaching':
               // 迟到的纠正：按文本匹配回填到对应的学生发言上
               setTurns((t) =>
@@ -542,6 +624,11 @@ export function useVoiceChat() {
                     : x,
                 ),
               );
+              break;
+
+            case 'notice':
+              // 只提示，不动 status —— 通话照常进行
+              setNotice(msg.message);
               break;
 
             case 'error':
@@ -562,12 +649,25 @@ export function useVoiceChat() {
           reject(new Error('ws error'));
         };
 
-        ws.onclose = () => {
+        ws.onclose = (ev) => {
           // 旧连接的关闭不能影响新连接的状态
           if (stale()) return;
           wsRef.current = null;
           openMicRef.current = false;
           aiSpeakingRef.current = false;
+          /*
+           * 4401 = 中转层判定没登录（私有区间的自定义码，见 relay.mjs）。
+           * 这时候光提示「连接出错」没用，登录态过期只有重新登录能解决，
+           * 所以直接把人送去登录页，并带上 next 好回到畅聊。
+           */
+          if (ev.code === 4401) {
+            setError('登录已过期，正在跳转登录页…');
+            setStatus('error');
+            const next = encodeURIComponent(location.pathname.replace(BASE_PATH, '') || '/');
+            location.assign(withBase(`/login?next=${next}`));
+            reject(new Error('unauthenticated'));
+            return;
+          }
           setStatus((s) => (s === 'error' ? s : 'idle'));
         };
       }),
@@ -632,6 +732,15 @@ export function useVoiceChat() {
     [],
   );
 
+  /**
+   * 开关「试试这样说」提示。关掉后这一通电话里不再出提示卡；
+   * hook 层只管状态，界面把它画成通话面板底部的灯泡按钮。
+   */
+  const setTipsOff = useCallback((next: boolean) => {
+    tipsOffRef.current = next;
+    if (next) setTip(null); // 关掉的当下就把挂着的提示收掉
+  }, []);
+
   const stop = useCallback(() => {
     // 推进代次：这条连接之后到达的回调一律作废，不再改状态
     genRef.current++;
@@ -657,5 +766,5 @@ export function useVoiceChat() {
   // 离开页面时一定要断开，否则上游会话会一直挂着计费
   useEffect(() => () => stop(), [stop]);
 
-  return { status, turns, partial, error, supported, muted, start, stop, setMuted };
+  return { status, turns, partial, error, notice, supported, muted, tip, setTipsOff, start, stop, setMuted };
 }

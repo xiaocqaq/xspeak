@@ -1,12 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AudioLines, ChevronLeft, ChevronRight, History, Keyboard, Loader2, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
+import { ChevronRight, History, Loader2, Phone, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
 import { Badge, Button, Card, Empty, ErrorNote, Input, PageHeader, Spinner } from '@/components/ui';
-import { ChatPanel, type StartConfig } from '@/components/chat-panel';
+import { CallSheet } from '@/components/call-sheet';
+import { ChatTranscript } from '@/components/chat-transcript';
+import { MaterialSheet } from '@/components/stages/shared';
 import { VoiceChatLauncher } from '@/components/voice-chat-launcher';
 import { apiGet, apiPost } from '@/lib/fetcher';
 import { cn } from '@/lib/cn';
+import { readScenarios, writeScenarios } from '@/lib/scenario-store';
+import type { ChatScenario, StartConfig } from '@/lib/types';
 
 /**
  * 兜底场景。只在 AI 生成失败时用 —— 有网络问题或没配 key 的时候，
@@ -54,17 +58,8 @@ const FALLBACK: Scenario[] = [
   },
 ];
 
-type Scenario = {
-  zh: string;
-  hint: string;
-  aiRole: string;
-  openingEn: string;
-  openingZh: string;
-  /** 这个场景绑定的今日目标词，展示用 */
-  targetTerms: string[];
-  /** 对应的词 id，开对话时带上，说出口才算 produced */
-  targetWordIds: number[];
-};
+/** 缓存模块要用同一个形状，类型放在 lib/types 里共用 */
+type Scenario = ChatScenario;
 
 type ScenariosResponse = {
   scenarios: Scenario[];
@@ -76,19 +71,16 @@ type ScenariosResponse = {
 type ConvSummary = { id: number; title: string; created_at: string; msgs: number };
 
 /**
- * 两种练法，刻意分开：
+ * AI 对话页。
  *
- * - 打字模式（text）：每说一句，AI 当场给出更自然的说法。反馈准、不漏，适合抠语法。
- * - 畅聊模式（voice）：直接说话，AI 用语音回你，中间不打断。练的是把话说出口的流利度，
- *   纠正在回合结束后异步补上。
- *
- * 不把两者揉在一个界面里 —— 「每句都被纠」和「不被打断地说完」本质冲突，混在一起会互相削弱。
+ * 只有一种练法：打电话。挑个场景，弹窗接通，直接开口说 ——
+ * 以前这里还有个「打字练」模式（每句都被抠语法，但要打字等回复），
+ * 现在整条去掉了：口语练的是把话说出口，打字练出来的是打字。
+ * 纠正没丢，它跟着字幕一句句补在通话弹窗里，也照旧进错题本。
  */
-type Mode = 'text' | 'voice';
-
 export function ChatPage() {
-  const [mode, setMode] = useState<Mode>('text');
   const [config, setConfig] = useState<StartConfig | null>(null);
+  /** 在看的那段旧记录。只读，和通话是两个不同的弹窗 */
   const [openId, setOpenId] = useState<number | null>(null);
   const [history, setHistory] = useState<ConvSummary[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -119,6 +111,14 @@ export function ChatPage() {
       setScenarios(d.scenarios);
       setMeta({ themeZh: d.themeZh, sessionId: d.sessionId, themeSlug: d.themeSlug });
       seenRef.current = [...seenRef.current, ...d.scenarios.map((s) => s.zh)].slice(-24);
+      // 存一份，切走再回来就不用再等一次生成。兜底场景不存 —— 那是失败路径
+      writeScenarios({
+        scenarios: d.scenarios,
+        themeZh: d.themeZh,
+        sessionId: d.sessionId,
+        themeSlug: d.themeSlug,
+        seen: seenRef.current,
+      });
     } catch (e) {
       setScenarioError((e as Error).message);
       // 生成失败时给兜底场景，不要让页面空着
@@ -137,57 +137,18 @@ export function ChatPage() {
   useEffect(() => {
     if (bootedRef.current) return;
     bootedRef.current = true;
+    // 先看缓存。命中就直接显示，一次 AI 都不用调。
+    // 放在 effect 里而不是 useState 初值里：服务端读不到 localStorage，
+    // 拿它当初值会让首屏和 hydration 对不上。
+    const cached = readScenarios();
+    if (cached) {
+      setScenarios(cached.scenarios);
+      setMeta({ themeZh: cached.themeZh, sessionId: cached.sessionId, themeSlug: cached.themeSlug });
+      seenRef.current = cached.seen;
+      return;
+    }
     void loadScenarios('');
   }, [loadScenarios]);
-
-  if (config || openId) {
-    const back = () => {
-      setConfig(null);
-      setOpenId(null);
-    };
-
-    const voice = mode === 'voice' && config;
-
-    return (
-      /* 通话模式要两列（面板 + 字幕）所以吃满容器；打字模式是气泡流，收回正文宽度 */
-      <div className={cn('space-y-3', !voice && 'mx-auto w-full max-w-[var(--content-w)]')}>
-        {/*
-          进了对话就只留一条返回。原来这里是「大标题 + 场景中文 + 换场景」三行一坨，
-          而通话面板本身已经写着跟谁在聊、聊什么 —— 同一件事说两遍，还把对话挤到屏幕下半截。
-          文字模式没有那个面板，所以标题只在文字模式补一行小字。
-        */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={back}
-            className="-ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[13px] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]"
-          >
-            <ChevronLeft className="size-4" aria-hidden />
-            换场景
-          </button>
-          {!voice && (
-            <span className="truncate text-[13px] font-semibold text-[var(--text-title)]">
-              {config?.title ?? '继续对话'}
-            </span>
-          )}
-        </div>
-        {/* key 保证换场景时面板彻底重建 */}
-        {voice ? (
-          <VoiceChatLauncher
-            key={`v-${config.title}`}
-            start={config}
-            onHangUp={() => setConfig(null)}
-          />
-        ) : (
-          <ChatPanel
-            key={openId ?? config?.title}
-            start={config ?? undefined}
-            conversationId={openId ?? undefined}
-          />
-        )}
-      </div>
-    );
-  }
 
   const pick = (s: Scenario) =>
     setConfig({
@@ -205,42 +166,12 @@ export function ChatPage() {
   return (
     /*
       挑场景这一屏是"读四段文字然后选一个"，把它拉到 76rem 只会让每张卡的
-      文字横跨太远。所以它自己收回正文宽度 —— 页面容器放宽是为了通话那一屏。
+      文字横跨太远。通话不再占页面（它在弹窗里），所以这一页从头到尾就是正文宽度。
     */
     <div className="mx-auto w-full max-w-[var(--content-w)] space-y-6 fade-up">
       <PageHeader eyebrow="Practice" title="AI 对话">
-        {mode === 'text'
-          ? '说错也没关系，AI 每次回话都会顺手告诉你更自然的说法，错的会自动进错误本。'
-          : '直接开口说，AI 用语音回你，中间不打断。纠正在你说完之后补上来。'}
+        像打电话一样直接开口说，AI 用语音回你，中间不打断。说错的地方它会在字幕里顺手改，也会进错误本。
       </PageHeader>
-
-      {/* 二选一：一个描边容器包住两半，选中的那半是纸面（浮起来），另一半是凹底 */}
-      <div className="flex gap-1 rounded-xl border border-[var(--border)] bg-[var(--bg-sidebar)] p-1">
-        {(
-          [
-            { k: 'text' as const, zh: '打字练', hint: '每句都纠', Icon: Keyboard },
-            { k: 'voice' as const, zh: '开口聊', hint: '不打断', Icon: AudioLines },
-          ]
-        ).map(({ k, zh, hint, Icon }) => (
-          <button
-            key={k}
-            type="button"
-            onClick={() => setMode(k)}
-            aria-pressed={mode === k}
-            className={cn(
-              'flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold',
-              'transition-all duration-200 [transition-timing-function:var(--ease-standard)]',
-              mode === k
-                ? 'bg-[var(--surface)] text-[var(--text-title)] shadow-[0_1px_2px_rgba(23,62,54,0.10)]'
-                : 'text-[var(--text-dim)] hover:text-[var(--text-secondary)]',
-            )}
-          >
-            <Icon className="size-4" strokeWidth={1.8} aria-hidden />
-            {zh}
-            <span className="text-[11px] font-normal opacity-70">{hint}</span>
-          </button>
-        ))}
-      </div>
 
       {/* 自定义话题。填了就按它生成，空着点「换一批」就按今天的词自由发挥 */}
       <Card className="space-y-4">
@@ -361,6 +292,11 @@ export function ChatPage() {
                   ))}
                 </p>
               )}
+              {/* 点整张卡就是拨过去，所以底下写清楚点了会发生什么 */}
+              <span className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-brand-600 dark:text-brand-400">
+                <Phone className="size-3.5" aria-hidden />
+                开始对话
+              </span>
             </button>
           ))}
         </div>
@@ -370,7 +306,6 @@ export function ChatPage() {
         type="button"
         onClick={() => setShowHistory((s) => !s)}
         className="flex w-full items-center justify-center gap-2 text-sm font-semibold text-[var(--link)] hover:underline"
-        hidden={mode === 'voice'}
       >
         <History className="size-4" aria-hidden />
         {showHistory ? '收起' : '看以前聊过的'}
@@ -405,6 +340,31 @@ export function ChatPage() {
           )}
         </Card>
       )}
+
+      {/*
+        通话弹窗。挑场景那一屏留在底下不卸载 —— 挂断之后人还在原地，
+        想换一个直接点下一张卡，不用先"返回"一次。
+        key 保证换场景时会话、计时、字幕全部重建。
+      */}
+      <CallSheet
+        open={Boolean(config)}
+        onHangUp={() => setConfig(null)}
+        label={config ? `和 ${config.aiRole} 通话` : '通话'}
+      >
+        {config && (
+          <VoiceChatLauncher key={`call-${config.title}`} start={config} onHangUp={() => setConfig(null)} />
+        )}
+      </CallSheet>
+
+      {/* 旧记录是只读的，用材料弹窗那一套（可关、可滚），不是通话那一套 */}
+      <MaterialSheet
+        open={openId !== null}
+        onClose={() => setOpenId(null)}
+        title="聊过的记录"
+        subtitle={history?.find((c) => c.id === openId)?.title}
+      >
+        {openId !== null && <ChatTranscript conversationId={openId} />}
+      </MaterialSheet>
     </div>
   );
 }

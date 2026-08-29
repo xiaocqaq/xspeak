@@ -9,11 +9,14 @@
  */
 
 export {
-  SAMPLE_RATE,
+  INPUT_SAMPLE_RATE,
+  OUTPUT_SAMPLE_RATE,
   CHUNK_MS,
   REALTIME_PATH,
   UPSTREAM_AUDIO,
+  SPEAK_ENGLISH_HINT,
   buildInstructions,
+  hasChinese,
 } from './protocol.mjs';
 
 /* ---------------------------- 浏览器 → 中转层 ---------------------------- */
@@ -52,8 +55,17 @@ export type Correction = { has_issue: boolean; corrected_en: string; note_zh: st
 export type ServerToClient =
   /** 上游会话就绪，可以开口了。 */
   | { type: 'ready' }
-  /** 学生这句话的转写。 */
-  | { type: 'user_transcript'; text: string }
+  /**
+   * 学生这句话的转写。
+   *
+   * zh 为真表示转写里有汉字 —— 只是这个意思，不代表学生说了中文（见 protocol.mjs
+   * 的 hasChinese，识别把带口音的英文听成中文更常见）。识别层也锁不住输入语言，
+   * language 字段被上游忽略，所以只能等转写回来再判。
+   *
+   * 前端据此在那句气泡下面单独加一块说明，纠正卡片照常显示 —— 这一轮同样有分析，
+   * 只是提示词里会提醒模型这句可能是转写错的。
+   */
+  | { type: 'user_transcript'; text: string; zh?: boolean }
   /** AI 回复的文本增量。 */
   | { type: 'assistant_delta'; text: string }
   /** AI 回复的音频增量，base64 PCM16。 */
@@ -71,4 +83,19 @@ export type ServerToClient =
       correction: Correction;
       usedTerms: string[];
     }
+  /**
+   * 「试试这样说」提示：AI 话音刚落就发，赶在学生开口之前给他下一句的参考。
+   * 独立于 coaching —— 提示要快（不落库、不等分析），纠正要全（落库、进错题本），
+   * 两条路并行跑、互不等待。turn 是回合序号：中转层按它挡掉过时的旧结果，
+   * 前端照单全收最新的。tip 为 null 表示这次没生成出来，界面保持原样。
+   */
+  | { type: 'tip'; turn: number; tip: { en: string; zh: string } | null }
+  /**
+   * 不致命但用户得知道的事。两种来源：这一通的音色没按设置生效（上游不认或被
+   * 静默换掉）；提交上去的那段音频上游没听出人声（"no speech found"）。
+   *
+   * 和 error 分开是因为通话还能继续，不该把状态打成 error 把整个面板变成错误态。
+   * 后一种还会跟一条空的 turn_done，把前端从 thinking 放回 ready、重新开麦。
+   */
+  | { type: 'notice'; message: string }
   | { type: 'error'; message: string };

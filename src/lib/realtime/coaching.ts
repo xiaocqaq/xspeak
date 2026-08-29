@@ -5,7 +5,7 @@ import { all, json, one, run, safeJson } from '@/lib/db';
 import { getWordsByIds, markProduced } from '@/lib/repo/words';
 import { recordMistake } from '@/lib/repo/mistakes';
 import { bumpDaily } from '@/lib/repo/stats';
-import type { Correction } from './protocol';
+import { hasChinese, type Correction } from './protocol';
 
 /**
  * 畅聊模式的教学旁路。
@@ -77,6 +77,21 @@ export async function processTurn(input: {
     [conversationId, assistantText || '(没有回应)'],
   );
 
+  /*
+   * 1.5) 转写里有汉字：分析照跑，只是换个提示词，并且这一轮不进错题本。
+   *
+   * 早先这里是 `if (hasChinese(userText)) return null;` —— 直接跳过分析。那是错的，
+   * 前提就不成立：有汉字并不等于学生说了中文，上游那个识别模型是中文为主的，
+   * 把带中文口音的英文听成中文才是常见情况（用户实测反馈，见 protocol.mjs 的 hasChinese）。
+   * 跳过的代价全落在学生身上 —— 他明明说了英文，纠正却被整条吞掉，界面上还挂着
+   * 「纠正稍后补上…」永远等不到。
+   *
+   * 现在的分法：
+   * - 分析要跑，但提示词里说清这句可能是转写错的，让模型自己判是哪一种（见 coachingPrompt）；
+   * - 错题本不写，见下面第 5 步 —— 那份数据要驱动之后几天的题，宁可漏一条也不能进脏的。
+   */
+  const maybeMisheard = hasChinese(userText);
+
   // 2) 跑纠正分析。失败不能影响对话，整段包住。
   let result: CoachingResult;
   try {
@@ -87,6 +102,7 @@ export async function processTurn(input: {
         targetWords,
         userText,
         history,
+        maybeMisheard,
       }),
       maxTokens: 800,
       temperature: 0.3,
@@ -98,7 +114,10 @@ export async function processTurn(input: {
        */
       role: 'fast',
     });
-    result = { correction: data.correction, usedTerms: data.used_target_words };
+    result = {
+      correction: data.correction,
+      usedTerms: data.used_target_words,
+    };
   } catch (err) {
     console.error('[linxi realtime] 纠正分析失败：', (err as Error).message);
     return null;
@@ -121,8 +140,17 @@ export async function processTurn(input: {
     await bumpDaily(input.userId, { produced: usedIds.length });
   }
 
-  // 5) 有问题就进错题本，之后几天的题目会围着它出
-  if (result.correction.has_issue) {
+  /*
+   * 5) 有问题就进错题本，之后几天的题目会围着它出。
+   *
+   * 两种情况不写，宁可漏一条：
+   * - maybeMisheard：wrong 字段会存下那句汉字转写，而它很可能根本不是学生说的话。
+   *   错题本要驱动之后几天出题，进了脏数据就是围着一句不存在的病句练。
+   *   界面上该看到的纠正照给（第 3 步已经写进 feedback），只是不留档。
+   * - corrected_en 空：提示词里让模型「听不出来就留空、别硬编一条语法错」，
+   *   留空的那条没有正确答案可对照，存进去也没用。
+   */
+  if (result.correction.has_issue && !maybeMisheard && result.correction.corrected_en.trim()) {
     await recordMistake(input.userId, {
       kind: 'grammar',
       stage: 'speaking',

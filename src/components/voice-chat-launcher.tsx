@@ -1,23 +1,30 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ErrorNote, Spinner } from '@/components/ui';
-import { VoiceChatPanel } from '@/components/voice-chat-panel';
-import type { StartConfig } from '@/components/chat-panel';
+import { Button, ErrorNote, Spinner } from '@/components/ui';
+import { VoiceChatPanel, type VoiceProgress } from '@/components/voice-chat-panel';
 import { apiGet, apiPost } from '@/lib/fetcher';
-import type { SpeechPace, UserProfile } from '@/lib/types';
+import type { SpeechPace, StartConfig, UserProfile } from '@/lib/types';
 
 /**
- * 畅聊模式的启动器。
+ * 通话的启动器。
  *
  * 语音面板需要一个已经存在的 conversationId（中转层要用它落库），
  * 但场景配置里只有场景本身。所以这里先走 /api/chat 建好会话、顺带读一次档案
  * 拿到水平和语音偏好，再把面板放出来。
  *
- * 建会话时故意不带 openingEn —— 畅聊模式的开场白由语音模型自己说，
+ * 建会话时故意不带 openingEn —— 开场白由语音模型自己说，
  * 不需要先写一条固定的文本开场。
  */
-export function VoiceChatLauncher({ start, onHangUp }: { start: StartConfig; onHangUp?: () => void }) {
+export function VoiceChatLauncher({
+  start,
+  onHangUp,
+  onProgress,
+}: {
+  start: StartConfig;
+  onHangUp?: () => void;
+  onProgress?: (p: VoiceProgress) => void;
+}) {
   const [ready, setReady] = useState<{
     conversationId: number;
     level: string;
@@ -56,11 +63,29 @@ export function VoiceChatLauncher({ start, onHangUp }: { start: StartConfig; onH
     })();
   }, [start]);
 
-  if (error) return <ErrorNote message={error} />;
+  /*
+    建会话失败 / 还没建好这两屏也长在通话弹窗里，所以要自己撑满并留一个出口 ——
+    弹窗右上角没有关闭叉（通话中误触会掐断话），这里不给按钮人就出不去了。
+  */
+  if (error)
+    return (
+      <div className="flex flex-1 flex-col justify-between gap-4 p-5">
+        <ErrorNote message={error} />
+        <Button variant="outline" className="w-full" onClick={onHangUp}>
+          挂断
+        </Button>
+      </div>
+    );
+
   if (!ready)
     return (
-      <div className="flex min-h-[40dvh] items-center justify-center">
-        <Spinner label="正在接通" />
+      <div className="flex flex-1 flex-col justify-between gap-4 p-5">
+        <div className="flex flex-1 items-center justify-center">
+          <Spinner label="正在接通" />
+        </div>
+        <Button variant="outline" className="w-full" onClick={onHangUp}>
+          挂断
+        </Button>
       </div>
     );
 
@@ -70,7 +95,7 @@ export function VoiceChatLauncher({ start, onHangUp }: { start: StartConfig; onH
         conversationId: ready.conversationId,
         aiRole: start.aiRole,
         scenarioZh: start.scenarioZh,
-        // 之前这里写死空数组，等于畅聊的目标词引导一直没生效 ——
+        // 之前这里写死空数组，等于目标词引导一直没生效 ——
         // AI 不知道该把话题往哪带，说出口的词也就进不了 produced_count。
         targetTerms: start.targetTerms ?? [],
         level: ready.level,
@@ -78,6 +103,7 @@ export function VoiceChatLauncher({ start, onHangUp }: { start: StartConfig; onH
         paceKey: ready.paceKey,
       }}
       onHangUp={onHangUp}
+      onProgress={onProgress}
     />
   );
 }

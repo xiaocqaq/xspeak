@@ -57,7 +57,13 @@ export async function POST(req: Request) {
       prompt: wish
         ? `学生想练的话题：「${wish}」。请按结构返回 ${input.count} 个围绕它展开的场景。`
         : `请按结构返回 ${input.count} 个场景。`,
-      maxTokens: 2500,
+      // 正文其实只要 400 来个 token，给 6000 是留给推理模型思考的余量：
+      // 思考也算在 max_tokens 里，额度卡太死会先被思考吃光、工具调用一个 token 都轮不到，
+      // 拿到的是 finish_reason=length 而不是结果。不吐那么多就不收那么多，放宽不涨钱。
+      maxTokens: 6000,
+      // 默认 120 秒是按"生成一段听力材料"定的，对这里太长：用户点了「换一批」
+      // 正盯着转圈，等两分钟和失败没区别，早点报错他还能换个话题重来。
+      timeoutMs: 45_000,
       // 场景要多样，温度给高一点；换一批换出雷同的东西没意义
       temperature: 0.95,
       toolName: 'emit_scenarios',

@@ -1,10 +1,25 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, Loader2, MessagesSquare, Mic, MicOff, Phone, PhoneOff, Radio, RefreshCw, Wand2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CheckCircle2,
+  HelpCircle,
+  Languages,
+  Lightbulb,
+  Loader2,
+  MessagesSquare,
+  Mic,
+  MicOff,
+  Phone,
+  PhoneOff,
+  Radio,
+  Wand2,
+  X,
+} from 'lucide-react';
 import { Badge, Button, Card, Empty, ErrorNote } from '@/components/ui';
 import { Speak } from '@/components/stages/shared';
 import { useVoiceChat } from '@/hooks/useVoiceChat';
+import { SPEAK_ENGLISH_HINT, type Correction } from '@/lib/realtime/protocol';
 import { cn } from '@/lib/cn';
 import type { SpeechPace } from '@/lib/types';
 
@@ -19,42 +34,62 @@ export type VoiceScenario = {
   paceKey?: SpeechPace;
 };
 
+/** 每轮说完往外报一次：说了几轮、哪些目标词真的说出口了。 */
+export type VoiceProgress = { turns: number; usedTerms: string[] };
+
 /**
- * 畅聊面板：语音进、语音出。
+ * 通话面板。语音进、语音出，全站唯一的对话形态。
  *
- * 和文本对话面板（chat-panel.tsx）的分工是刻意的：
- * - 这里练"不被打断地把话说完"，纠正迟到一两秒，不影响说话节奏；
- * - 那里练"每句都被抠语法"，纠正即时、准确，但要打字等回复。
+ * 它只在弹窗里出现（CallSheet），所以这里不管遮罩、圆角和居中 ——
+ * 只负责把「一通电话」画出来：跟谁在聊、聊了多久、听没听到、说了什么、怎么挂。
  *
- * 两边落库完全一致，所以错题本和掌握度判定共用一套。
+ * 挂载即接通。以前它自己有一屏待机页（先看清对方是谁再点接通），
+ * 现在那一屏搬到了页面上 —— 点「开始对话」才会挂载这个组件，
+ * 所以进来时权限和录音已经是用户要的了，再让人点第二次就成了多余的一道门。
  */
 export function VoiceChatPanel({
   scenario,
   onHangUp,
+  onProgress,
 }: {
   scenario: VoiceScenario;
   onHangUp?: () => void;
+  onProgress?: (p: VoiceProgress) => void;
 }) {
   const vc = useVoiceChat();
+  /** hook 里的 tip 是快照，解构出来供 JSX 用 */
+  const { tip } = vc;
   const endRef = useRef<HTMLDivElement>(null);
-  /**
-   * 是否已经“接通”。
-   *
-   * 以前是进页面就自动连接并开麦 —— 直接弹权限、直接开始录音，
-   * 人还没准备好说话。现在改成打电话的节奏：先看到“要跟谁聊、聊什么”，
-   * 自己点接通才开麦。
-   */
-  const [connected, setConnected] = useState(false);
   /** 通话计时。真电话都有这个数字，它是「正在通话中」最直白的证据。 */
   const [seconds, setSeconds] = useState(0);
+  /**
+   * 提示的手动开关。用户关掉后 hook 层不再接收新提示；
+   * 这里只管画（关掉后卡片消失）。挂断重拨会重置 —— 新的一通默认再看提示。
+   */
+  const [tipsOff, setTipsOffLocal] = useState(false);
+  const setTipsOff = (next: boolean) => {
+    setTipsOffLocal(next);
+    vc.setTipsOff(next);
+  };
+  /*
+    挂载即接通，卸载即挂断 —— 两件事必须写在同一个 effect 里成对出现。
 
-  // 离开页面一定要挂断，否则麦克风和 WebSocket 会一直开着
-  useEffect(() => () => vc.stop(), []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    最初这里是「用一个 ref 挡住第二次执行」，那是错的：严格模式下 React 会
+    挂载→清理→再挂载，清理那一下已经把连接停了，而 ref 让第二次不再接通，
+    结果开发环境里进来就是「通话已结束」。改成成对写法后，第二次会正常重连，
+    也不会漏一条连接 —— hook 里的 connect() 每次都先把上一条 ws 关掉，
+    并用代次（genRef）把旧连接迟到的回调挡在外面。
+  */
+  useEffect(() => {
+    if (!vc.supported) return;
+    void vc.start(scenario);
+    return () => vc.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // 只在还通着的时候走表。connected 只记录「点过接通」，断线后仍然是 true ——
-  // 光看它计时，会出现「通话已结束」下面秒数还在涨，看着像连着其实早断了。
-  const live = connected && vc.status !== 'idle' && vc.status !== 'error';
+  // 只在还通着的时候走表。断线后光看「点过接通」会出现
+  // 「通话已结束」下面秒数还在涨，看着像连着其实早断了。
+  const live = vc.status !== 'idle' && vc.status !== 'error';
   useEffect(() => {
     if (!live) return;
     const t = setInterval(() => setSeconds((s) => s + 1), 1000);
@@ -65,15 +100,51 @@ export function VoiceChatPanel({
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [vc.turns.length, vc.partial]);
 
+  /**
+   * 说出口的目标词。
+   *
+   * 从 turns 里现算而不是自己攒一份：usedTerms 是纠正结果异步补回来的，
+   * 补上时那一轮的对象会换新，依赖它的 memo 自然会再算一次。
+   */
+  const { turnCount, usedTerms } = useMemo(() => {
+    const s = new Set<string>();
+    let n = 0;
+    for (const t of vc.turns) {
+      if (t.role !== 'user') continue;
+      n++;
+      for (const w of t.usedTerms ?? []) s.add(w.toLowerCase());
+    }
+    return { turnCount: n, usedTerms: s };
+  }, [vc.turns]);
+
+  /*
+    回调走 ref。调用处基本都是写内联箭头函数的，直接进依赖数组的话
+    每次父组件重渲染都是个新函数 → effect 重跑 → 父组件又 setState → 死循环。
+  */
+  const progressRef = useRef(onProgress);
+  progressRef.current = onProgress;
+  useEffect(() => {
+    progressRef.current?.({ turns: turnCount, usedTerms: [...usedTerms] });
+  }, [turnCount, usedTerms]);
+
+  const hangUp = () => {
+    vc.stop();
+    onHangUp?.();
+  };
+
   if (!vc.supported) {
     return (
-      <Card>
-        <h3 className="text-sm">这个浏览器用不了畅聊</h3>
-        <p className="mt-1.5 text-xs dim">
-          畅聊需要麦克风和 Web Audio 支持。用 Chrome、Edge 或手机 Safari 打开，
-          或者切到「逐句纠正」模式打字练。
-        </p>
-      </Card>
+      <div className="flex flex-1 flex-col justify-between gap-4 p-5">
+        <Card>
+          <h3 className="text-sm">这个浏览器用不了对话</h3>
+          <p className="mt-1.5 text-xs dim">
+            语音对话需要麦克风和 Web Audio 支持。用 Chrome、Edge 或手机 Safari 打开就能聊。
+          </p>
+        </Card>
+        <Button variant="outline" className="w-full" onClick={hangUp}>
+          挂断
+        </Button>
+      </div>
     );
   }
 
@@ -94,88 +165,65 @@ export function VoiceChatPanel({
                 ? '通话已结束'
                 : '在听，说话就行';
 
-  /**
-   * 待机屏（还没接通）。
-   *
-   * 像打进来的电话：先告诉你对方是谁、要聊什么，再给一个接通按钮。
-   * 权限弹窗和录音都发生在点下去之后，而不是一进页面就偷偷开麦。
-   */
-  if (!connected) {
-    return (
-      <div className="flex flex-col items-center gap-8 py-10 text-center">
-        {/* 头像位：描边圆 + 浅底，不弄头像图片 */}
-        <div className="grid size-24 place-items-center rounded-full border border-brand-200 bg-brand-50 dark:border-brand-800 dark:bg-brand-900/30">
-          <Radio className="size-9 text-brand-600" strokeWidth={1.6} aria-hidden />
-        </div>
+  return (
+    <>
+      <CallHeader scenario={scenario} vc={vc} seconds={seconds} statusLabel={statusLabel} usedTerms={usedTerms} />
 
-        <div className="space-y-2">
-          {/* 这屏只有一个主角，用衬线大字：像书里的一个人名，而不是一行 UI 文案 */}
-          <p className="serif text-[22px] font-bold text-[var(--text-title)]">{scenario.aiRole}</p>
-          <p className="mx-auto max-w-xs text-sm leading-relaxed text-[var(--text-secondary)]">
-            {scenario.scenarioZh}
-          </p>
-        </div>
-
-        {scenario.targetTerms.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-2">
-            {scenario.targetTerms.map((t) => (
-              <span
-                key={t}
-                className="en rounded-md border border-[var(--border)] bg-[var(--bg-sidebar)] px-2.5 py-1 text-[13px] text-[var(--text-body)]"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-col items-center gap-3">
+      {/*
+        「试试这样说」提示卡。挂在字幕区上方、控制栏下方 —— 学生卡住的时候
+        眼睛往下一瞟就能看到，不用在滚动的历史里找。
+        开关在卡片右上角（关掉后整块消失，这一通不再出）。
+      */}
+      {tip && !tipsOff && vc.status !== 'error' && (
+        <div
+          className={cn(
+            'relative mx-5 mb-1 shrink-0 rounded-xl border border-dashed border-brand-300 bg-brand-50/60 px-3.5 py-2.5',
+            'dark:border-brand-700 dark:bg-brand-900/25',
+            // 为上一句准备的提示在学生开口后淡下去 —— 它已经完成使命
+            vc.turns[vc.turns.length - 1]?.role === 'user' && 'opacity-50',
+          )}
+        >
           <button
             type="button"
             onClick={() => {
-              setConnected(true);
-              void vc.start(scenario);
+              setTipsOff(true);
             }}
-            aria-label="接通"
-            // 通话按钮保持圆形（这是电话的通用语言），但按下只下沉不缩放，跟站里其它控件一致
-            className={cn(
-              'grid size-16 place-items-center rounded-full bg-[var(--success)] text-white',
-              'shadow-[0_2px_10px_color-mix(in_srgb,var(--success)_45%,transparent)]',
-              'transition-[filter,transform,box-shadow] duration-200 [transition-timing-function:var(--ease-standard)]',
-              'hover:brightness-105 active:translate-y-px',
-            )}
+            aria-label="关闭提示"
+            className="absolute right-1.5 top-1.5 rounded-md p-1 text-[var(--text-faint)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-body)]"
           >
-            <Phone className="size-7" aria-hidden />
+            <X className="size-3.5" aria-hidden />
           </button>
-          <p className="text-[13px] dim">点一下开始说话</p>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300">
+            <Lightbulb className="size-3.5" aria-hidden />
+            试试这样说
+          </div>
+          <p className="en mt-1 flex items-start gap-1 pr-5 text-[14px] leading-relaxed text-[var(--text-title)]">
+            <span className="flex-1">{tip.en}</span>
+            <Speak text={tip.en} className="p-0.5" />
+          </p>
+          <p className="mt-0.5 pr-5 text-[11.5px] dim">{tip.zh}</p>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    /*
-      通话中的版式：左边是「通话面板」（跟谁在聊、聊了多久、静音和挂断），
-      右边是逐句字幕。
+      {/* 字幕自己滚。外壳高度是写死的，所以这里 min-h-0 才能让 flex 正确收缩 */}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        {vc.status === 'error' && (
+          <ErrorNote
+            message={vc.error ?? '语音通话没能接通。常见原因是麦克风权限被拒，浏览器地址栏左侧可以重新允许。'}
+          />
+        )}
+        {vc.status !== 'error' && vc.error && <ErrorNote message={vc.error} />}
 
-      原来这些是竖着堆的 —— 状态一行、字幕一大块、底部再钉两条 sticky 控制条，
-      加上页面自己的标题，屏幕上四层东西各占一条，看着就乱。
-      真打电话的时候屏幕上只有两件事：对方是谁，和挂断在哪。
-    */
-    <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)] xl:items-start">
-      <CallPanel
-        scenario={scenario}
-        vc={vc}
-        seconds={seconds}
-        statusLabel={statusLabel}
-        onHangUp={onHangUp}
-      />
+        {/*
+          不是报错，所以不能用 ErrorNote 那个红框 —— 通话本身还好着，
+          只是声音不是用户选的那个。用中性底色的一条，说清事实就够了。
+        */}
+        {vc.notice && (
+          <div className="rounded-2xl border border-[var(--hairline)] bg-[var(--bg-sidebar)] p-3.5 text-[13px] leading-relaxed dim">
+            <p className="whitespace-pre-wrap">{vc.notice}</p>
+          </div>
+        )}
 
-      {/*
-        字幕区自己滚，不跟着整页长。高度写死一段而不是 min-h：
-        通话面板要一直在视野里，字幕无限长的话它会被顶走。
-      */}
-      <div className="max-h-[52dvh] space-y-3 overflow-y-auto xl:max-h-[calc(100dvh-var(--topbar-h)-8rem)]">
         {/* 刚接通、还一句没说时给个落点。不然上下一片空白，人不知道该干什么 */}
         {vc.turns.length === 0 && !vc.partial && vc.status !== 'error' && (
           <Empty
@@ -197,35 +245,31 @@ export function VoiceChatPanel({
                   <p className="en text-[15px] leading-relaxed">{t.text}</p>
                 </div>
 
-                {/* 纠正是异步补上来的，没到之前显示占位，避免界面跳动 */}
-                {t.correction ? (
-                  <div
-                    className={cn(
-                      'rounded-xl border px-3 py-2 text-xs leading-relaxed',
-                      t.correction.has_issue
-                        ? 'border-warm-200 bg-warm-50 text-warm-900 dark:border-warm-800 dark:bg-warm-900/40 dark:text-warm-100'
-                        : 'border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-100',
-                    )}
-                  >
+                {/*
+                  转写成中文时的那条说明，是「附加」而不是「替代」。
+
+                  早先它是三选一里的第一支，中文那句就没有纠正可看了 —— 那时中转层
+                  确实会跳过分析。现在不跳了（见 lib/realtime/coaching.ts），因为有汉字
+                  更可能是识别把英文听错了，那一轮的纠正正是学生要的。所以这条说明
+                  单独一块，下面的纠正照常显示。
+
+                  标题也不能写成「试着说英文」——那是在断言他说了中文。措辞见
+                  protocol.mjs 的 SPEAK_ENGLISH_HINT。
+
+                  提示放在气泡下面而不是走 notice：notice 那条是整屏一条、跟着列表滚，
+                  说明不了是哪句话的问题；贴着气泡才对得上号。
+                */}
+                {t.zh && (
+                  <div className="rounded-xl border border-warm-200 bg-warm-50 px-3 py-2 text-xs leading-relaxed text-warm-900 dark:border-warm-800 dark:bg-warm-900/40 dark:text-warm-100">
                     <div className="flex items-center gap-1.5 font-semibold">
-                      {t.correction.has_issue ? (
-                        <>
-                          <Wand2 className="size-3.5" aria-hidden /> 可以这么说
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="size-3.5" aria-hidden /> 说得对
-                        </>
-                      )}
+                      <Languages className="size-3.5" aria-hidden /> 这句识别成了中文
                     </div>
-                    {t.correction.has_issue && (
-                      <p className="en mt-1 flex items-start gap-1">
-                        <span className="flex-1">{t.correction.corrected_en}</span>
-                        <Speak text={t.correction.corrected_en} className="p-0.5" />
-                      </p>
-                    )}
-                    <p className="mt-1">{t.correction.note_zh}</p>
+                    <p className="mt-1">{SPEAK_ENGLISH_HINT}</p>
                   </div>
+                )}
+
+                {t.correction ? (
+                  <CorrectionCard c={t.correction} />
                 ) : (
                   <p className="text-right text-[11px] dim">纠正稍后补上…</p>
                 )}
@@ -273,7 +317,28 @@ export function VoiceChatPanel({
 
         <div ref={endRef} />
       </div>
-    </div>
+
+      {/*
+        底部只有挂断。断线之后多一个「开始对话」重接 —— 它顺带会重新触发麦克风权限，
+        被拒过的人也有路走；除此之外这一栏不放别的东西，
+        整通电话里唯一要找的按钮就是它。
+
+        判断条件是 !live 而不是 status === 'error'：上游把连接干净地关掉时状态回的是
+        idle（「通话已结束」），那时候按钮也得出来，否则人只能挂断再从页面上重新拨。
+      */}
+      <div className="space-y-2 border-t border-[var(--hairline)] px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        {!live && (
+          <Button className="w-full" onClick={() => void vc.start(scenario)}>
+            <Phone className="size-4" aria-hidden />
+            开始对话
+          </Button>
+        )}
+        <Button variant={live ? 'danger' : 'outline'} className="w-full" onClick={hangUp}>
+          <PhoneOff className="size-4" aria-hidden />
+          挂断
+        </Button>
+      </div>
+    </>
   );
 }
 
@@ -285,34 +350,82 @@ function clock(total: number) {
 }
 
 /**
- * 通话面板：一通电话在屏幕上该有的全部信息 —— 跟谁、多久、听没听到、怎么挂。
+ * 学生那句话下面的纠正卡片。三种状态：
  *
- * 单独抽出来是因为它在宽屏要 sticky 住，而字幕要能滚：两者不能是同一个盒子。
- * 挂断和静音也从原来钉在页面底部的 sticky 条搬到了这里 —— 底部横条会跟着
- * 页面走，人往上翻看字幕时它就悬在中间挡字。
+ * 1. 有问题 → 「可以这么说」+ 改后的英文 + 朗读；
+ * 2. 没问题 → 「说得对」+ 一句鼓励；
+ * 3. 没听清 → has_issue 为假但 corrected_en 是空的。
+ *
+ * 第 3 种是转写成中文那一路带出来的：提示词允许模型在还原不出英文原意时这么答
+ * （见 lib/ai/prompts.ts 的 maybeMisheard 分支），它表示「这句我没听清」，不是
+ * 「说得对」。按 has_issue 二选一会把它渲染成表扬 —— 学生一句没说明白的话被夸了，
+ * 比不给反馈更糟。所以空的 corrected_en 单独算一种。
  */
-function CallPanel({
+function CorrectionCard({ c }: { c: Correction }) {
+  const unclear = !c.has_issue && !c.corrected_en.trim();
+  return (
+    <div
+      className={cn(
+        'rounded-xl border px-3 py-2 text-xs leading-relaxed',
+        c.has_issue || unclear
+          ? 'border-warm-200 bg-warm-50 text-warm-900 dark:border-warm-800 dark:bg-warm-900/40 dark:text-warm-100'
+          : 'border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-100',
+      )}
+    >
+      <div className="flex items-center gap-1.5 font-semibold">
+        {unclear ? (
+          <>
+            <HelpCircle className="size-3.5" aria-hidden /> 这句没听清
+          </>
+        ) : c.has_issue ? (
+          <>
+            <Wand2 className="size-3.5" aria-hidden /> 可以这么说
+          </>
+        ) : (
+          <>
+            <CheckCircle2 className="size-3.5" aria-hidden /> 说得对
+          </>
+        )}
+      </div>
+      {c.has_issue && (
+        <p className="en mt-1 flex items-start gap-1">
+          <span className="flex-1">{c.corrected_en}</span>
+          <Speak text={c.corrected_en} className="p-0.5" />
+        </p>
+      )}
+      <p className="mt-1">{c.note_zh}</p>
+    </div>
+  );
+}
+
+/**
+ * 通话弹窗的抬头：跟谁、多久、听没听到、要用上哪些词。
+ *
+ * 钉在弹窗顶部不跟字幕滚 —— 往上翻看前面说过的话时，
+ * 「现在还通着吗」这个信息不该跟着滚走。
+ */
+function CallHeader({
   scenario,
   vc,
   seconds,
   statusLabel,
-  onHangUp,
+  usedTerms,
 }: {
   scenario: VoiceScenario;
   vc: ReturnType<typeof useVoiceChat>;
   seconds: number;
   statusLabel: string;
-  onHangUp?: () => void;
+  usedTerms: Set<string>;
 }) {
   const live = vc.status !== 'idle' && vc.status !== 'error' && !vc.muted;
 
   return (
-    <div className="space-y-3 xl:sticky xl:top-[calc(var(--topbar-h)+1.5rem)]">
-      <Card className="flex flex-col items-center gap-4 text-center">
+    <div className="shrink-0 space-y-3 border-b border-[var(--hairline)] px-5 py-4">
+      <div className="flex items-center gap-3">
         {/* 头像位。接通中转圈，正常通话时呼吸，静音或断线就静止 —— 一眼能分出三种状态 */}
         <div
           className={cn(
-            'grid size-16 place-items-center rounded-full border transition-colors duration-300',
+            'grid size-12 shrink-0 place-items-center rounded-full border transition-colors duration-300',
             '[transition-timing-function:var(--ease-standard)]',
             vc.status === 'error'
               ? 'border-[var(--border)] bg-[var(--bg-sidebar)]'
@@ -320,154 +433,86 @@ function CallPanel({
           )}
         >
           {vc.status === 'connecting' ? (
-            <Loader2 className="size-6 animate-spin text-brand-600" aria-hidden />
+            <Loader2 className="size-5 animate-spin text-brand-600" aria-hidden />
           ) : (
             <Radio
-              className={cn('size-6', live ? 'animate-pulse text-brand-600' : 'text-[var(--text-faint)]')}
+              className={cn('size-5', live ? 'animate-pulse text-brand-600' : 'text-[var(--text-faint)]')}
               strokeWidth={1.6}
               aria-hidden
             />
           )}
         </div>
 
-        <div className="space-y-1">
-          <p className="serif text-[17px] font-bold leading-snug text-[var(--text-title)]">{scenario.aiRole}</p>
+        <div className="min-w-0 flex-1">
+          {/* 对方是谁用衬线字：像书里的一个人名，而不是一行 UI 文案 */}
+          <p className="serif truncate text-[17px] font-bold leading-snug text-[var(--text-title)]">
+            {scenario.aiRole}
+          </p>
           {/* 计时用等宽数字，秒进位时整行不会左右抖 */}
           <p className="text-[13px] tabular-nums dim">{vc.status === 'error' ? '已断开' : clock(seconds)}</p>
         </div>
+      </div>
 
-        {/* 状态条：文字 + 听到声音时跳动的电平。这是"AI 现在听得到我吗"的唯一答案 */}
-        <div
-          className={cn(
-            'flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[13px]',
-            'transition-colors duration-300 [transition-timing-function:var(--ease-standard)]',
-            vc.muted
-              ? 'border-[var(--border)] bg-[var(--bg-sidebar)] text-[var(--text-dim)]'
-              : vc.status === 'listening'
-                ? 'border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-700 dark:bg-brand-900/30 dark:text-brand-100'
-                : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-body)]',
-          )}
-          aria-live="polite"
-        >
-          {vc.muted ? (
-            <MicOff className="size-4 shrink-0" aria-hidden />
-          ) : (
-            <Mic
-              className={cn('size-4 shrink-0', vc.status === 'listening' && 'text-brand-600 dark:text-brand-300')}
-              aria-hidden
-            />
-          )}
-          <span className="font-semibold">{statusLabel}</span>
-          {vc.status === 'listening' && !vc.muted && (
-            <span className="flex items-end gap-0.5" aria-hidden>
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="w-1 animate-pulse rounded-full bg-[var(--accent-bar)]"
-                  style={{ height: `${6 + i * 3}px`, animationDelay: `${i * 140}ms` }}
-                />
-              ))}
-            </span>
-          )}
-        </div>
-
-        {/*
-          断线时静音没有意义（操作的是不存在的通话），挂断也等于让人手动确认失败。
-          所以这一格换成「重新接通」—— 它顺带会重新触发麦克风权限请求，被拒过的人也有路走。
-        */}
-        {vc.status === 'error' ? (
-          <div className="w-full space-y-2">
-            <Button className="w-full" onClick={() => void vc.start(scenario)}>
-              <RefreshCw className="size-4" aria-hidden />
-              重新接通
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                vc.stop();
-                onHangUp?.();
-              }}
-            >
-              <PhoneOff className="size-4" aria-hidden />
-              退出畅聊
-            </Button>
-          </div>
-        ) : (
-          /* 静音是开关（描边 + 浅底表示按下了），挂断是破坏性动作（实心红）。都保持 44px 可点区 */
-          <div className="flex items-center justify-center gap-3">
-            <button
-              type="button"
-              onClick={() => vc.setMuted(!vc.muted)}
-              disabled={vc.status === 'connecting'}
-              aria-label={vc.muted ? '取消静音' : '静音'}
-              aria-pressed={vc.muted}
-              className={cn(
-                'grid size-11 place-items-center rounded-full border',
-                'transition-all duration-200 [transition-timing-function:var(--ease-standard)] active:translate-y-px',
-                'disabled:opacity-40 disabled:active:translate-y-0',
-                vc.muted
-                  ? 'border-warm-300 bg-warm-50 text-warm-600 dark:border-warm-800 dark:bg-warm-900/30 dark:text-warm-300'
-                  : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-title)] hover:bg-[var(--surface-hover)]',
-              )}
-            >
-              {vc.muted ? <MicOff className="size-5" aria-hidden /> : <Mic className="size-5" aria-hidden />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                vc.stop();
-                onHangUp?.();
-              }}
-              aria-label="结束畅聊"
-              className={cn(
-                'grid size-11 place-items-center rounded-full bg-[var(--danger)] text-white',
-                'transition-[filter,transform] duration-200 [transition-timing-function:var(--ease-standard)]',
-                'hover:brightness-105 active:translate-y-px',
-              )}
-            >
-              <PhoneOff className="size-5" aria-hidden />
-            </button>
-          </div>
+      {/* 状态条：文字 + 听到声音时跳动的电平。这是"AI 现在听得到我吗"的唯一答案 */}
+      <div
+        className={cn(
+          'flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[13px]',
+          'transition-colors duration-300 [transition-timing-function:var(--ease-standard)]',
+          vc.muted
+            ? 'border-[var(--border)] bg-[var(--bg-sidebar)] text-[var(--text-dim)]'
+            : vc.status === 'listening'
+              ? 'border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-700 dark:bg-brand-900/30 dark:text-brand-100'
+              : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-body)]',
         )}
-      </Card>
+        aria-live="polite"
+      >
+        {vc.muted ? (
+          <MicOff className="size-4 shrink-0" aria-hidden />
+        ) : (
+          <Mic
+            className={cn('size-4 shrink-0', vc.status === 'listening' && 'text-brand-600 dark:text-brand-300')}
+            aria-hidden
+          />
+        )}
+        <span className="font-semibold">{statusLabel}</span>
+        {vc.status === 'listening' && !vc.muted && (
+          <span className="flex items-end gap-0.5" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="w-1 animate-pulse rounded-full bg-[var(--accent-bar)]"
+                style={{ height: `${6 + i * 3}px`, animationDelay: `${i * 140}ms` }}
+              />
+            ))}
+          </span>
+        )}
+      </div>
 
       {/*
-        错误文案。兼底是必要的：重连会先清掉 error，存在「状态已是 error 但文案还没写回来」
-        的一瞬间，那时不能只给一个光秃的按钮。
+        要用上的词。说出口的当场变绿 —— 这一屏是全屏弹窗，
+        原来放在页面侧栏的目标词表被遮住了，得在这儿看得见。
       */}
-      {vc.status === 'error' ? (
-        <ErrorNote
-          message={vc.error ?? '语音通话没能接通。常见原因是麦克风权限被拒，浏览器地址栏左侧可以重新允许。'}
-        />
-      ) : (
-        vc.error && <ErrorNote message={vc.error} />
-      )}
-
-      {/* 要用上的词放在通话面板下面：说的时候瞟一眼就行，不用回上面找 */}
       {scenario.targetTerms.length > 0 && vc.status !== 'error' && (
-        <Card className="space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-[var(--text-faint)]">
-            试着用上
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {scenario.targetTerms.map((t) => (
+        <div className="flex flex-wrap gap-1.5">
+          {scenario.targetTerms.map((t) => {
+            const used = usedTerms.has(t.toLowerCase());
+            return (
               <span
                 key={t}
-                className="en rounded-md border border-[var(--border)] bg-[var(--bg-sidebar)] px-2 py-0.5 text-[13px] text-[var(--text-body)]"
+                className={cn(
+                  'en rounded-md border px-2 py-0.5 text-[13px]',
+                  'transition-colors duration-200 [transition-timing-function:var(--ease-standard)]',
+                  used
+                    ? 'border-[var(--success)] bg-[color-mix(in_srgb,var(--success)_12%,var(--surface))] font-semibold text-[var(--success)]'
+                    : 'border-[var(--border)] bg-[var(--bg-sidebar)] text-[var(--text-body)]',
+                )}
               >
+                {used && '✓ '}
                 {t}
               </span>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {vc.status !== 'error' && (
-        <p className="text-[11px] leading-relaxed dim">
-          像打电话一样直接说，说完停一下 AI 就会接话。纠正随后补在字幕里，也会进错题本。
-        </p>
+            );
+          })}
+        </div>
       )}
     </div>
   );
