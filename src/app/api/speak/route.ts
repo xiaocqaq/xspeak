@@ -1,17 +1,6 @@
-import {
-  KokoroError,
-  cacheKey,
-  kokoroConfig,
-  readCache,
-} from '@/lib/tts/kokoro';
-import {
-  DEFAULT_SERVER_VOICE,
-  playbackRateFor,
-  serverVoiceProvider,
-  synthSpeed,
-} from '@/lib/tts/server-voice-list';
+import { TtsError, cacheKey, readCache } from '@/lib/tts/cache';
+import { DEFAULT_SERVER_VOICE, isServerVoice, playbackRateFor } from '@/lib/tts/server-voice-list';
 import { serverTtsEnabled, speakWithProvider } from '@/lib/tts/server-voices';
-import { KOKORO_ALL_VOICES } from '@/lib/tts/kokoro-voices';
 import { PACE_KEYS, pace } from '@/lib/voice-options';
 import { authConfig, currentIdentity } from '@/lib/auth';
 
@@ -19,8 +8,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * 逐句朗读的服务端音频。两个上游：MiMo（云端，快）+ 自建 Kokoro，
- * 见 @/lib/tts/server-voices。
+ * 逐句朗读的服务端音频。上游是云端 MiMo（小米 mimo-v2.5-tts），见
+ * @/lib/tts/server-voices。2026-09-09 起自建 Kokoro 下线，不再有第二家。
  *
  * ── 为什么是 GET 而不是 POST ──
  *
@@ -33,17 +22,17 @@ export const dynamic = 'force-dynamic';
  *
  * ── 缓存策略 ──
  *
- * 内容由 (text, voice, speed) 完全决定，所以 immutable + 一年 max-age。
- * 参数变了 URL 就变了，不存在「缓存了旧内容」的问题。
- * 服务端还有一层磁盘缓存 —— 浏览器缓存是每设备的，磁盘缓存是全站共享的，
- * 第二个用户点同一个词就不用再合成一次。
+ * 内容由 (text, voice) 完全决定（MiMo 恒按 1.0 合成），所以 immutable +
+ * 一年 max-age。参数变了 URL 就变了，不存在「缓存了旧内容」的问题。
+ * 服务端还有一层磁盘缓存（见 @/lib/tts/cache）—— 浏览器缓存是每设备的，
+ * 磁盘缓存是全站共享的，第二个用户点同一个词就不用再合成一次。
+ * 凌晨 4 点的 cron 会预合成当天内容（stage-prefill），用户点开基本必中缓存。
  *
- * ── 语速和两家上游的关系 ──
+ * ── 语速 ──
  *
- * MiMo 没有语速参数，合成恒为 1.0（synthSpeed 归一），语速由播放端
- * playbackRate 兑现 —— 所以这个接口把倍速写在响应头 x-tts-playback-rate
- * 里，前端照着设，不用自己再算一遍（算式集中在一处，改起来不会两边漂）。
- * Kokoro 照旧把速度合成进音频，播放端原速放。
+ * MiMo 没有语速参数，合成恒为 1.0，语速由播放端 playbackRate 兑现 ——
+ * 所以这个接口把倍速写在响应头 x-tts-playback-rate 里，前端照着设，
+ * 不用自己再算一遍（算式集中在 server-voice-list 的 playbackRateFor）。
  */
 
 const MAX_TEXT = 300;
@@ -51,9 +40,9 @@ const MAX_TEXT = 300;
 /**
  * 必须登录才能用。
  *
- * 这个接口和别的不一样：每次未命中缓存都要花钱（MiMo 按 token 计费）或
- * 花 CPU（Kokoro 1.5～13 秒），还会往磁盘里写文件。不挡的话，任何人拿一个
- * 循环喂随机文本就能把额度/机器吃干 —— 而且不需要任何凭据。
+ * 这个接口和别的不一样：每次未命中缓存都要花钱（MiMo 按 token 计费），
+ * 还会往磁盘里写文件。不挡的话，任何人拿一个循环喂随机文本就能把额度
+ * 吃干 —— 而且不需要任何凭据。
  *
  * 用 currentIdentity 而不是 currentUser：只要确认「是登录用户」，
  * 不需要建档案（currentUser 会写库）。朗读一句话不该产生一行 users。
@@ -79,7 +68,6 @@ function audioResponse(
   hit: boolean,
   range: string | null,
   playbackRate: number,
-  extraHeaders?: Record<string, string>,
 ): Response {
   const headers: Record<string, string> = {
     'content-type': 'audio/mpeg',
@@ -89,9 +77,8 @@ function audioResponse(
     etag,
     // 排查用：没命中说明是现合成的，那次请求本来就慢
     'x-tts-cache': hit ? 'hit' : 'miss',
-    // MiMo 的语速在播放端兑现，前端读这个头设置 playbackRate（Kokoro 恒为 1）
+    // MiMo 的语速在播放端兑现，前端读这个头设置 playbackRate
     'x-tts-playback-rate': playbackRate.toFixed(2),
-    ...(extraHeaders ?? {}),
   };
 
   const m = /^bytes=(\d*)-(\d*)$/.exec((range ?? '').trim());
@@ -126,26 +113,16 @@ function audioResponse(
 
 /**
  * 解析并校验 query 参数。合法时返回字段，不合法时返回要回的错误响应。
- *
- * alt（可选）：备用在线音色 id。主音色的磁盘缓存 miss 且主音色是 Kokoro
- * （合成要 1.5~13s，现场等不起）时，自动改用 alt 现场合成 —— 这是
- * 「定时任务用免费 Kokoro 预生成，用户点击撞到空白时 MiMo 秒级救场」
- * 的服务端开关。主音色是 MiMo 时 alt 无意义（本身就是快路），忽略。
  */
 function parseParams(
   url: URL,
-): {
-  text: string;
-  voice: string;
-  alt: string | null;
-  speed: number;
-  playbackRate: number;
-} | { error: Response } {
+):
+  | { text: string; voice: string; playbackRate: number }
+  | { error: Response } {
   const text = (url.searchParams.get('text') ?? '').trim();
   const voiceParam = url.searchParams.get('voice') ?? DEFAULT_SERVER_VOICE;
   const paceParam = url.searchParams.get('pace') ?? 'normal';
   const slow = url.searchParams.get('slow') === '1';
-  const altParam = url.searchParams.get('alt');
 
   if (!text) {
     return {
@@ -157,28 +134,17 @@ function parseParams(
       error: Response.json({ ok: false, error: `文本超过 ${MAX_TEXT} 字符` }, { status: 413 }),
     };
   }
-  // 白名单：这个接口会拿服务端的 key 去调 TTS，不能让任意字符串透传。
-  // 两个白名单都收 —— 老收藏里存着 Kokoro 音色，不能因为接了 MiMo 就作废。
-  if (
-    serverVoiceProvider(voiceParam) === null &&
-    !KOKORO_ALL_VOICES.includes(voiceParam)
-  ) {
+  // 白名单：这个接口会拿服务端的 key 去调付费 TTS，不能让任意字符串透传。
+  // 老收藏里的 `kokoro:xx` 音色随自建 Kokoro 一起下线，不再放行。
+  if (!isServerVoice(voiceParam)) {
     return { error: Response.json({ ok: false, error: '未知音色' }, { status: 400 }) };
   }
-  // alt 只收 MiMo 音色：它的职责就是「快」，别的没有意义
-  const alt = altParam && serverVoiceProvider(altParam) === 'mimo' ? altParam : null;
 
   const paceKey = (PACE_KEYS as string[]).includes(paceParam) ? paceParam : 'normal';
   const base = pace(paceKey).ttsSpeed;
-  // 「慢速朗读」按钮：在当前档位上再降一档，和浏览器那条路的算法保持一致
-  // （useSpeech.ts 里是 base - 0.22）。下限 0.5 是服务端接受的最小值。
-  const speed = synthSpeed(
-    voiceParam,
-    Number((slow ? Math.max(0.5, base - 0.22) : base).toFixed(2)),
-  );
-  // 播放端的倍速：MiMo 靠它兑现语速档位（含 slow），Kokoro 恒为 1
-  const playbackRate = playbackRateFor(voiceParam, base, slow);
-  return { text, voice: voiceParam, alt, speed, playbackRate };
+  // 播放端的倍速：MiMo 的语速全靠它兑现（含 slow 慢速朗读按钮）
+  const playbackRate = playbackRateFor(base, slow);
+  return { text, voice: voiceParam, playbackRate };
 }
 
 export async function GET(req: Request) {
@@ -192,44 +158,21 @@ export async function GET(req: Request) {
 
   const parsed = parseParams(new URL(req.url));
   if ('error' in parsed) return parsed.error;
-  const { text, voice, alt, speed, playbackRate } = parsed;
+  const { text, voice, playbackRate } = parsed;
 
-  let key = cacheKey(text, voice, speed);
-  let etag = `"${key}"`;
+  // MiMo 没有语速参数，恒按 1.0 合成 —— 换语速档位不换缓存键
+  const key = cacheKey(text, voice, 1);
+  const etag = `${key}`;
   // 命中浏览器缓存的话连磁盘都不用读
   if (req.headers.get('if-none-match') === etag) {
     return new Response(null, { status: 304, headers: { etag } });
   }
 
   try {
-    /*
-     * 兜底分流（alt）：主音色是 Kokoro 且磁盘缓存 miss 时，现场合成要
-     * 1.5~13s —— 用户等不起。这时改用 alt（MiMo 在线音色，秒级）合成。
-     * 响应头 x-tts-alt 标记这次走了兜底，方便排障和前端统计。
-     * 主音色命中缓存（预生成几乎必中）或本身就是 MiMo 时，行为不变。
-     */
-    const isKokoro = serverVoiceProvider(voice) !== 'mimo';
-    let useVoice = voice;
-    let useSpeed = speed;
-    let useRate = playbackRate;
-    let usedAlt = false;
-    if (isKokoro && alt) {
-      const cached = await readCache(key, kokoroConfig());
-      if (!cached) {
-        useVoice = alt;
-        useSpeed = synthSpeed(alt, speed);
-        useRate = playbackRateFor(alt, pace((new URL(req.url)).searchParams.get('pace') ?? 'normal').ttsSpeed, false);
-        key = cacheKey(text, useVoice, useSpeed);
-        etag = `"${key}"`;
-        usedAlt = true;
-      }
-    }
-    const { audio, hit } = await speakWithProvider(text, useVoice, useSpeed);
-    // 只在真走了兜底时才带这个头；没用 alt 还挂个 "undefined" 字符串会误导排障
-    const headers = usedAlt ? { 'x-tts-alt': alt as string } : undefined;
-    return audioResponse(audio, etag, hit, req.headers.get('range'), useRate, headers);
+    const { audio, hit } = await speakWithProvider(text, voice);
+    return audioResponse(audio, etag, hit, req.headers.get('range'), playbackRate);
   } catch (err) {
-    if (err instanceof KokoroError) {
+    if (err instanceof TtsError) {
       return Response.json({ ok: false, error: err.message }, { status: err.status });
     }
     const msg = err instanceof Error ? err.message : String(err);
@@ -254,14 +197,14 @@ export async function HEAD(req: Request) {
     return new Response(null, { status: parsed.error.status });
   }
 
-  const key = cacheKey(parsed.text, parsed.voice, parsed.speed);
-  const cached = await readCache(key, kokoroConfig());
+  const key = cacheKey(parsed.text, parsed.voice, 1);
+  const cached = await readCache(key);
 
   return new Response(null, {
     status: cached ? 200 : 404,
     headers: cached
       ? {
-          etag: `"${key}"`,
+          etag: `${key}`,
           'content-length': String(cached.length),
           'accept-ranges': 'bytes',
           'x-tts-cache': 'hit',

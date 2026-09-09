@@ -13,18 +13,17 @@
  * 设置页改完立刻写回并广播。localStorage 只是缓存，真值仍在数据库 ——
  * 换设备时由 /api/profile 回填。
  *
- * 存的是语音包名字（SpeechSynthesisVoice.name，如 "Moira"）而不是索引：
- * 索引在不同系统、甚至同一系统装卸语音包后都会变。名字在这台机器上找不到时
- * pickVoice 会自己退回默认包，不会哑掉。
+ * 存的值有两种形态（2026-09-09 起）：`mimo:xxx` = 云端 MiMo 音色（服务端合成），
+ * 裸名 = 浏览器语音包名（SpeechSynthesisVoice.name，如 "Moira"）。索引在不同系统、
+ * 甚至同一系统装卸语音包后都会变，所以不存索引；名字在这台机器上找不到时
+ * pickVoice 会自己退回默认包，不会哑掉。`kokoro:xxx` 老值随自建 Kokoro 下线，
+ * 不再写入，读到时由 preferredMimoVoiceId 判成"非 MiMo 音色"走默认。
  */
 
 /** 存储键沿用旧前缀（项目曾叫 linxi），和 pace-store 保持一致。 */
 const KEY = 'linxi.ttsVoice';
-/** 自建音色偏好的独立键（双音色方案：在线 + 自建各存一个）。 */
-const KEY_OFFLINE = 'linxi.ttsVoiceOffline';
 /** storage 事件只跨标签页触发，同页内改动要靠自定义事件通知。 */
 const EVENT = 'linxi:voice';
-const EVENT_OFFLINE = 'linxi:voiceOffline';
 
 /** null = 跟随系统默认（设置页里的第一项）。 */
 export function readVoice(): string | null {
@@ -60,44 +59,6 @@ export function subscribeVoice(fn: (v: string | null) => void): () => void {
   window.addEventListener('storage', onStorage);
   return () => {
     window.removeEventListener(EVENT, onLocal);
-    window.removeEventListener('storage', onStorage);
-  };
-}
-
-/* ---------------- 自建（Kokoro）音色偏好：同一套机制的平行副本 ---------------- */
-
-/** 读自建音色偏好。null = 跟随默认（af_heart）。 */
-export function readOfflineVoice(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const v = window.localStorage.getItem(KEY_OFFLINE);
-    return v && v.trim() ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeOfflineVoice(next: string | null): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (next) window.localStorage.setItem(KEY_OFFLINE, next);
-    else window.localStorage.removeItem(KEY_OFFLINE);
-  } catch {
-    /* 同上：写不进也不影响本次会话 */
-  }
-  window.dispatchEvent(new CustomEvent(EVENT_OFFLINE, { detail: next }));
-}
-
-export function subscribeOfflineVoice(fn: (v: string | null) => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-  const onLocal = () => fn(readOfflineVoice());
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY_OFFLINE) fn(readOfflineVoice());
-  };
-  window.addEventListener(EVENT_OFFLINE, onLocal);
-  window.addEventListener('storage', onStorage);
-  return () => {
-    window.removeEventListener(EVENT_OFFLINE, onLocal);
     window.removeEventListener('storage', onStorage);
   };
 }

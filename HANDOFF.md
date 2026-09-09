@@ -1,5 +1,17 @@
 # 交接：xspeak 界面改造 + 离线词典
 
+> **2026-09-09 更新：自建 Kokoro 整条下线，逐句朗读只剩云端 MiMo 一家。**
+> 删掉 `src/lib/tts/kokoro.ts`、`kokoro-voices.ts`；`/api/speak` 不再收 kokoro 音色、
+> 不再有 `alt` 参数；`users.voice_offline` 不再读写（列保留防共享库旧代码报错，
+> 见 `db/schema.ts` 注释）；预热/预合成只有 MiMo 一条路、不分梯队。
+> 设置页只剩一组「MiMo · 云端在线音色」，畅聊和音色试听照旧走 StepFun。
+> 本分支 `feat/shell-layout-and-provider-config`，未 push、未提交。
+> **已部署生产 speak.xlingo.fun（2026-09-09 晚）**：typecheck 过、`:3022` 跑新构建，
+> systemd `xspeak.service` 管着（重启用 `systemctl restart xspeak`）；未登录访问
+> `/api/speak` 回 401，服务端实测 MiMo 上游 200 出音频。
+> （下文 2026-08-27 / 08-28 的「第二路上游」「双音色」「梯队」章节保留作历史，
+> 部署和改代码以 2026-09-09 这段 + 源码为准，别照旧章节实施。）
+
 > **2026-08-26 已上生产：`https://speak.xlingo.fun`**（项目改名 xspeak，跑
 > `/opt/xspeak` + `127.0.0.1:3022`，全量 smoke 29/29）。测试站
 > `test.xlingo.fun/xlearn`（:3021）并存。详见「生产部署：speak.xlingo.fun」。
@@ -1641,12 +1653,14 @@ setsid env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u PORT -u NODE_ENV \
 ss -ltnpH | grep ':3022 ' | grep -oP 'pid=\K[0-9]+'
 ```
 
-**没装 systemd unit，机器重启不自愈。** 我试着写 `/etc/systemd/system/xspeak.service`
-被权限分类器按 Unauthorized Persistence 拦下了，拦得对 —— 用户没点名要装持久服务。
-要装的话 unit 里注意：`WorkingDirectory=/opt/xspeak`（Next 从 cwd 找 `.next`）、
+**2026-09-09 起生产用 systemd 管着**（`xspeak.service`，enabled）：
+重启用 `systemctl restart xspeak`，看日志用 `journalctl -u xspeak -n 50`。
+**别手动 kill + setsid 起了** —— unit 的 Restart 会自动把服务拉起，
+和手动起的新实例抢 3022，日志里只会看到 EADDRINUSE（本次部署实测踩到）。
+上面的 setsid 命令保留作「没有 unit 的机器」的备用手法。unit 要点：
+`WorkingDirectory=/opt/xspeak`（Next 从 cwd 找 `.next`）、
 `ReadWritePaths=/opt/xspeak/.next`（运行时要写 fetch 缓存）、
-**别照抄 `xiaoai-chat.service` 的 `ProtectHome=true`** 那条本身在 `/opt` 下无害，
-但测试站的目录在 `/root` 下，给测试站装 unit 时会挡到自己。
+别照抄 `xiaoai-chat.service` 的 `ProtectHome=true`（测试站在 `/root` 下会挡到自己）。
 
 ### 上线后实测（2026-08-26）
 

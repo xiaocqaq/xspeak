@@ -9,14 +9,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readPace, subscribePace } from '@/lib/pace-store';
-import { readOfflineVoice, readVoice, subscribeOfflineVoice, subscribeVoice } from '@/lib/voice-store';
+import { readVoice, subscribeVoice } from '@/lib/voice-store';
 import { pace } from '@/lib/voice-options';
-import {
-  DEFAULT_SERVER_VOICE,
-  SERVER_VOICES,
-  preferredVoiceId,
-  serverVoiceProvider,
-} from '@/lib/tts/server-voice-list';
+import { DEFAULT_SERVER_VOICE, SERVER_VOICES, preferredMimoVoiceId } from '@/lib/tts/server-voice-list';
 import { withBase } from '@/lib/base-path';
 import type { SpeechPace } from '@/lib/types';
 
@@ -119,7 +114,7 @@ export function rankEnglishVoices(voices: SpeechSynthesisVoice[]): SpeechSynthes
 /* ------------------------------ 服务端音色播放 ------------------------------ */
 
 /**
- * 自建 Kokoro 合成的音频，用一个 <audio> 播。
+ * 云端 MiMo 合成的音频，用一个 <audio> 播。
  *
  * ── 为什么全程共用一个元素 ──
  *
@@ -144,7 +139,7 @@ function getAudio(): HTMLAudioElement | null {
  * - ≤20 字符（单词/短语）：700ms。高频小操作要极速反馈；超时的后台下载
  *   照旧写盘，第二次点同一句就走缓存拿到好声音。
  * - 更长的按 2s 起步、每多 100 字符再加 1s、封顶 6s：MiMo 冷合成实测
- *   短句 1.5s、长句 3-4s，Kokoro 更慢；300 字符的大块硬卡 2s 必然每次
+ *   短句 1.5s、长句 3-4s；300 字符的大块硬卡 2s 必然每次
  *   超时退回系统语音，等于白配了音色。封顶是因为等真嗓音的耐心有限，
  *   兜底线再高也不能让用户对着转圈的按钮干等。
  * - 听力的整段对话在进环节时就预热好了（warmServerSpeech），轮到播放
@@ -177,7 +172,7 @@ function serverTtsBudgetMs(chars: number): number {
 /**
  * 服务端连续失败几次就这一整个会话不再试。
  *
- * 没配 KOKORO_TTS_URL 的部署会稳定拿到 503，服务挂了也一样。这种情况下
+ * 没配 MIMO_TTS_KEY 的部署会稳定拿到 503，服务挂了也一样。这种情况下
  * 每次点朗读都先白等一次请求、再退回浏览器语音包，体验比直接用浏览器还差。
  * 允许一次失败是给瞬时网络抖动留的余地，第二次就认定是真不可用。
  */
@@ -187,7 +182,7 @@ const SERVER_TTS_GIVE_UP = 2;
  * 熔断冷却（2026-08-28 加）。
  *
  * 原来 serverFails 是模块级变量、**只在成功出声时归零**：上游抖两下
- * （Kokoro 对个别句子稳定 502，实测存在）之后，这个标签页里的所有朗读
+ * （2026-08 实测上游对个别句子稳定 502）之后，这个标签页里的所有朗读
  * 就永久走浏览器语音包 —— 用户看到的是"点发音没声、连后端请求都没有"，
  * 只能刷新页面。现在给熔断加 60 秒有效期，过期自动再试一次；真不可用
  * 时最多每分钟白等一次请求，代价可接受。
@@ -275,16 +270,14 @@ export async function previewServerVoice(text: string, voiceId: string, paceKey:
    * MiMo 恒按 1.0 合成，试听也要按档位调 playbackRate，不然用户选了慢档
    * 听到的却是正常速度，试听就骗人了。公式和 speak() 里那条一致。
    */
-  if (serverVoiceProvider(voiceId) === 'mimo') {
-    const base = pace(paceKey).ttsSpeed;
-    // 与服务端 playbackRateFor 同式（含 1.15 boost，听感对齐 Kokoro）
-    const rate = Math.min(1.6, Math.round(base * 1.15 * 100) / 100);
-    if (rate !== 1) {
-      try {
-        audio.playbackRate = rate;
-      } catch {
-        /* 忽略 */
-      }
+  const base = pace(paceKey).ttsSpeed;
+  // 与服务端 playbackRateFor 同式（含 1.15 boost）
+  const rate = Math.min(1.6, Math.round(base * 1.15 * 100) / 100);
+  if (rate !== 1) {
+    try {
+      audio.playbackRate = rate;
+    } catch {
+      /* 忽略 */
     }
   }
   await new Promise<void>((resolve, reject) => {
@@ -312,7 +305,7 @@ export async function previewServerVoice(text: string, voiceId: string, paceKey:
 
 /**
  * 服务端音色能不能用。设置页拿它决定要不要把这批音色画出来 ——
- * 没配 KOKORO_TTS_URL 的部署（比如别人克隆下来自己跑）不该看到一排点了没反应的音色。
+ * 没配 MIMO_TTS_KEY 的部署（比如别人克隆下来自己跑）不该看到一排点了没反应的音色。
  *
  * 用 HEAD 不带参数探，只认 400 为「能用」：
  * 配好了才会走到参数校验、因为缺 text 返回 400；没配是 503，没登录是 401。
@@ -329,9 +322,9 @@ export async function serverVoicesAvailable(): Promise<boolean> {
 /**
  * 预热请求的限流阀：同一路最多并发 2 个。
  *
- * 这台机器核少，2026-08-27 实测 10 个并发能把自建 Kokoro 全部压到 502、
- * MiMo 也互相拖慢。进听力环节一次要热 4–8 句台词，必须排队、最多两个
- * 在飞。播放时 startWarm 和 warmServerSpeech 共用这一个队列，谁先触发都行。
+ * 云端合成虽快，几十个并发同时发也会互相拖慢（2026-08-27 实测）。
+ * 进听力环节一次要热 4–8 句台词，必须排队、最多两个在飞。
+ * 播放时 startWarm 和 warmServerSpeech 共用这一个队列，谁先触发都行。
  */
 const WARM_CONCURRENCY = 2;
 const warmQueue = new Set<string>(); // 进行中的 key（qs 串）
@@ -431,9 +424,6 @@ export function useTts(preferredVoice?: string) {
   /** 音色偏好，同上：ref + 订阅，读的是同一份 localStorage 缓存。 */
   const voiceRef = useRef<string | null>(readVoice());
   useEffect(() => subscribeVoice((v) => (voiceRef.current = v)), []);
-  /** 自建音色偏好（双音色方案）：预生成第一梯队用。 */
-  const offlineVoiceRef = useRef<string | null>(readOfflineVoice());
-  useEffect(() => subscribeOfflineVoice((v) => (offlineVoiceRef.current = v)), []);
 
   useEffect(() => {
     if (!supported) return;
@@ -503,8 +493,10 @@ export function useTts(preferredVoice?: string) {
          *
          * 和 voice/pitch 互斥：那两个是浏览器语音包那条路的参数。传了这个就说明
          * 调用方要的是服务端音色，所以下面的 canServer 不再因为"有 voice"而否决。
+         * （2026-09-09 前叫 kokoroVoice；自建 Kokoro 下线、服务端朗读只剩
+         * MiMo 之后改名，语义没变。）
          */
-        kokoroVoice?: string;
+        serverVoiceId?: string;
         /**
          * 只用在线 TTS，永不退回浏览器语音包（听力/阅读专用，2026-08-28）。
          *
@@ -563,36 +555,21 @@ export function useTts(preferredVoice?: string) {
 
       /*
        * 什么时候能走服务端音色：
-       * - 用户在设置里选的是 kokoro: 开头的音色（没选就是浏览器语音包，尊重选择）
+       * - 用户在设置里选了在线 MiMo 音色（'mimo:xx'），或调用点指定了服务端音色
        * - 调用点没有指定具体的 SpeechSynthesisVoice（设置页试听浏览器某个包）
        * - 没要求 pitch / rate —— 听力对话靠 pitch 区分说话人，服务端改不了音高；
        *   rate 是调用点写死的倍速，服务端的 speed 走档位，两者语义不一样
-       * - 文本在接口限长内（见 api/speak 的 MAX_TEXT）
+       * - 文本在接口限长内（见 api/speak 的 MAX_TEXT，超限的由切块连播处理）
+       *
+       * 2026-09-09 起服务端朗读只有云端 MiMo 一家（自建 Kokoro 下线），
+       * 主音色本身就是快路，不再需要 alt 救场，服务端也不再收 kokoro 音色。
+       * 偏好只认 'mimo:xx'；浏览器语音包名和老 kokoro:xx 老值一律回落到
+       * 默认 Mia。
        */
-      /*
-       * 点击朗读一律走在线 MiMo（2026-08-28 二次调整，用户明确要求）。
-       *
-       * 上一版是「主音色 = 自建 Kokoro，miss 时服务端用 alt 切 MiMo 救场」。
-       * 问题出在缓存命中之外的所有情况：Kokoro 在这台小机器上合成一句要
-       * 1.5~13 秒，只要凌晨 cron 没覆盖到（新主题、当天新增的句子、挖空
-       * 变体、cron 失败），用户点一下就得干等，还有几句稳定 502。
-       * 现在把「有人在等」的路径全部交给云端 MiMo：秒级出声，花钱换体验。
-       * 免费的 Kokoro 只留给凌晨 4 点的 cron（没人等，慢无所谓）。
-       *
-       * 音色偏好：优先 users.voice（在线偏好），其次兼容 voice_offline 里
-       * 存的 MiMo 值和老数据裸名，都不是 MiMo 音色就用默认 Mia。
-       * 听力的 kokoroVoice 参数（名字沿用，实际是"指定服务端音色"）照旧
-       * 优先 —— 分嗓音的桶序已经在 buildServerVoiceCast 里换成 MiMo 在前。
-       *
-       * alt 参数不再需要：主音色本身就是快路，服务端那段 Kokoro-miss 兜底
-       * 逻辑对 MiMo 主音色是空转（route.ts 里 isKokoro 为 false 直接跳过）。
-       */
-      const prefer = (v: string | null | undefined) => preferredVoiceId(v, 'mimo');
       const serverVoice =
-        opts?.kokoroVoice ??
-        prefer(preferredVoice) ??
-        prefer(voiceRef.current) ??
-        prefer(offlineVoiceRef.current) ??
+        opts?.serverVoiceId ??
+        preferredMimoVoiceId(preferredVoice) ??
+        preferredMimoVoiceId(voiceRef.current) ??
         DEFAULT_SERVER_VOICE;
       const audio = getAudio();
       /*
@@ -608,7 +585,7 @@ export function useTts(preferredVoice?: string) {
         Boolean(audio) &&
         (online || !serverTtsBlocked()) &&
         // 显式指定了服务端音色时，voice/pitch 是调用方给浏览器兜底路留的，不算否决条件
-        (online || Boolean(opts?.kokoroVoice) || (!opts?.voice && opts?.pitch === undefined)) &&
+        (online || Boolean(opts?.serverVoiceId) || (!opts?.voice && opts?.pitch === undefined)) &&
         opts?.rate === undefined &&
         // 不再以 300 字符一刀切地否决长文本——超限的由 splitSpeechChunks 切块连播。
         // 只拦确实离谱的超长文（几千字的整篇文档），那种还是留给系统语音包。
@@ -641,10 +618,8 @@ export function useTts(preferredVoice?: string) {
       const chunks = splitSpeechChunks(body);
 
       /*
-       * 请求 URL：voice 就是最终出声的那个音色（MiMo），不再带 alt ——
-       * alt 是「主音色是 Kokoro 且缓存 miss 时换一家救场」用的，主音色
-       * 已经是快的那家了。服务端接口仍保留 alt 参数（设置页试听 Kokoro
-       * 音色、以后要换回来都用得上），只是这条路不传。
+       * 请求 URL：voice 就是最终出声的那个音色（MiMo）。
+       * 服务端只有 MiMo 一家，这条路不带 alt。
        */
       const qsFor = (t: string) => {
         const q = new URLSearchParams({ text: t, voice: serverVoice, pace: paceRef.current });
@@ -704,7 +679,7 @@ export function useTts(preferredVoice?: string) {
 
       /*
        * 预热：一块开播时把它后面最多两块插到共享预热队列最前面（限流阀
-       * 同一刻最多 2 个在飞 —— 这台机器核少，10 并发能把自建 Kokoro 全压超时）。
+       * 同一刻最多 2 个在飞，几十个并发会把上游和磁盘一起打满）。
        * 听力另有大招：进环节时整段对话就通过 warmServerSpeech 排队热好了。
        */
       const startWarm = (i: number) => {
@@ -716,22 +691,16 @@ export function useTts(preferredVoice?: string) {
        * MiMo 的语速在播放端兑现（上游没有语速参数，服务端恒按 1.0 合成）：
        * 倍速在这里按用户的档位算，公式和路由的 playbackRateFor 是同一条 ——
        * 两处必须一起改。HTMLAudioElement 拿不到响应头，所以不走服务端下发。
-       * Kokoro 的速度已经合成进音频，播放端恒为 1。
        *
-       * 现在主音色一律是 MiMo（见上面的音色选择），所以这条几乎总是走
-       * MiMo 分支；判断仍按音色的 provider 走，设置页试听 Kokoro 音色、
-       * 或者以后把某条路改回 Kokoro，都不会把已经含速度的音频再加速一遍。
-       * 上一版为了「可能被服务端切成 alt」而对 Kokoro 主音色一律不设倍速
-       * 的妥协可以去掉了 —— 不再有偷偷换家的情况。
-       *
-       * MIMO_PLAYBACK_BOOST = 1.15 与服务端同步（听感对齐 Kokoro）。
+       * 服务端朗读只有 MiMo 一家（2026-09-09 起），不用再按 provider 判断。
+       * MIMO_PLAYBACK_BOOST = 1.15 与服务端同步。
        */
       const MIMO_BOOST = 1.15;
       const base = pace(paceRef.current).ttsSpeed;
-      const playbackRate =
-        serverVoiceProvider(serverVoice) === 'mimo'
-          ? Math.min(1.6, Math.round((opts?.slow ? Math.max(0.8, base - 0.2) : base) * MIMO_BOOST * 100) / 100)
-          : 1;
+      const playbackRate = Math.min(
+        1.6,
+        Math.round((opts?.slow ? Math.max(0.8, base - 0.2) : base) * MIMO_BOOST * 100) / 100,
+      );
       const applyPlaybackRate = () => {
         if (playbackRate !== 1) {
           try {
@@ -795,7 +764,7 @@ export function useTts(preferredVoice?: string) {
          * play() 会先把旧 buffer 放出来 → 听起来像"点 there 念了上一句"。
          *
          * 修法：换句前把播放位置归零，src 变了才赋值，没变就重新 load()。
-         * 下载中断的顾虑不成立 —— 服务端合成完就写磁盘缓存了（见 kokoro.ts
+         * 下载中断的顾虑不成立 —— 服务端合成完就写磁盘缓存了（见 tts/cache.ts
          * writeCache），客户端收没收完与它无关。
          */
         try {
@@ -1007,10 +976,9 @@ export function buildVoiceCast(
  * 「性别对上优先」：报了性别的说话人去同性别的桶里按顺序领，没报的按
  * 女/男轮着发 —— 前两个说话人性别一定不同，两人对话（最常见）立刻听出是对话。
  *
- * 桶序 = MiMo（云端，秒级）在前、Kokoro 在后（2026-08-28 二次调整）。
- * 播放是"有人在等"的路径，一律走快的那家；免费的 Kokoro 只留给凌晨 cron。
- * 服务端预合成的 serverCastFor(tier='mimo') 用的是同一套桶序和规则 ——
- * 两边必须一致，否则预合成的音色和播放请求的音色对不上，缓存永远 miss。
+ * 服务端朗读只有 MiMo 一家（2026-09-09 起），桶就是 MiMo 音色按性别分。
+ * 服务端预合成的 serverCastFor 用的是同一套桶序和规则 —— 两边必须一致，
+ * 否则预合成的音色和播放请求的音色对不上，缓存永远 miss。
  * 用户选的在线音色仍排它性别桶的最前。
  */
 export function buildServerVoiceCast(
@@ -1033,19 +1001,12 @@ export function buildServerVoiceCast(
     }
   }
 
-  // 桶：MiMo 在前（云端秒级，播放走这家），Kokoro 兜在后（音色不够分才用到）
-  // —— 与服务端 serverCastFor(tier='mimo') 同序，缓存键才对得上
-  const female = [
-    ...SERVER_VOICES.filter((v) => v.gender === 'female' && v.provider === 'mimo').map((v) => v.id),
-    ...SERVER_VOICES.filter((v) => v.gender === 'female' && v.provider === 'kokoro').map((v) => v.id),
-  ];
-  const male = [
-    ...SERVER_VOICES.filter((v) => v.gender === 'male' && v.provider === 'mimo').map((v) => v.id),
-    ...SERVER_VOICES.filter((v) => v.gender === 'male' && v.provider === 'kokoro').map((v) => v.id),
-  ];
+  // 桶：MiMo 音色按性别分 —— 与服务端 serverCastFor 同序，缓存键才对得上
+  const female = SERVER_VOICES.filter((v) => v.gender === 'female').map((v) => v.id);
+  const male = SERVER_VOICES.filter((v) => v.gender === 'male').map((v) => v.id);
 
   // 用户选的音色排到它性别桶的最前：单人独白必然用它，多人对话至少一人是它
-  const prefId = preferredVoiceId(preferred ?? null, 'mimo');
+  const prefId = preferredMimoVoiceId(preferred);
   const bump = (arr: string[]) => {
     if (!prefId) return arr;
     const i = arr.indexOf(prefId);

@@ -52,8 +52,8 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
 
   /*
     一人一个嗓音。两条路：
-    - 服务端音色（优先）：buildServerVoiceCast 从 MiMo+Kokoro 的真嗓音里按
-      性别分派，speak() 收到 kokoroVoice 就走服务端合成，不用等 voiceschanged。
+    - 服务端音色（优先）：buildServerVoiceCast 从 MiMo 的真嗓音里按性别分派，
+      speak() 收到 serverVoiceId 就走服务端合成，不用等 voiceschanged。
     - 浏览器语音包（兜底）：服务端没配/连续失败时自动退到这条，cast 照旧备着。
     readVoice() 在服务端返回 null，但这里不影响首帧。
   */
@@ -125,7 +125,7 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
       // 不写死 rate：交给 useTts 按用户的语速档位算，slow 只表示「再慢一档」
       speak(dialogue[i].text_en, {
         slow,
-        kokoroVoice: serverCast.get(dialogue[i].speaker),
+        serverVoiceId: serverCast.get(dialogue[i].speaker),
         ...cast.get(dialogue[i].speaker),
         // 听力全篇连播只用在线音色（2026-08-28 用户要求）：这一环就是练耳朵，
         // 混进系统语音包等于把训练材料换掉了。某句没预生成就现场合成、
@@ -211,7 +211,7 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
                 setLine(i);
                 speak(d.text_en, {
                   slow,
-                  kokoroVoice: serverCast.get(d.speaker),
+                  serverVoiceId: serverCast.get(d.speaker),
                   ...cast.get(d.speaker),
                   onlineOnly: true, // 同上：单句重听也只用在线音色
                 });

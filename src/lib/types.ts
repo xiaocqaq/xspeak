@@ -36,10 +36,8 @@ export type UserProfile = {
   interests: string[];
   daily_minutes: number;
   new_words_per_day: number;
-  /** 浏览器 Web Speech 的语音包名字，给逐句朗读用 */
+  /** 逐句朗读音色偏好：'mimo:xx' = 云端 MiMo 音色；浏览器语音包名 = 系统本地嗓音 */
   voice: string | null;
-  /** 自建 Kokoro 音色（'kokoro:xx'），预生成第一梯队用。NULL=跟随默认 af_heart */
-  voice_offline: string | null;
   /** StepFun realtime 的音色 id，给畅聊用。和 voice 不通用 */
   ai_voice: string | null;
   speech_pace: SpeechPace;

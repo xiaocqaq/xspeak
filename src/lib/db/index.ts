@@ -174,7 +174,6 @@ function toProfile(row: Record<string, unknown>, id: number): UserProfile {
     daily_minutes: Number(row.daily_minutes),
     new_words_per_day: Number(row.new_words_per_day),
     voice: (row.voice as string | null) ?? null,
-    voice_offline: (row.voice_offline as string | null) ?? null,
     ai_voice: (row.ai_voice as string | null) ?? null,
     // 老库刚补上列时可能是 null，也要防住手写进去的非法值
     speech_pace: normalizePace(row.speech_pace),
