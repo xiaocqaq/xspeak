@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Menu, PartyPopper, RefreshCw } from 'lucide-react';
+import { PanelLeft, PartyPopper, RefreshCw } from 'lucide-react';
 import { Button, Card, ErrorNote } from '@/components/ui';
 import { StageLoading } from './shared';
 import { useTopbarSlot } from '@/components/shell/app-shell';
@@ -148,11 +148,10 @@ export function SessionRunner() {
               'transition-colors hover:bg-[var(--surface-hover)] hover:text-brand-600',
             )}
           >
-            <Menu className="size-[15px]" strokeWidth={1.8} aria-hidden />
+            <PanelLeft className="size-[15px]" strokeWidth={1.8} aria-hidden />
           </button>
           <h1 className="flex min-w-0 items-baseline gap-1.5 text-[17px] font-bold text-[var(--text-title)]">
             <span className="truncate">{info.zh}</span>
-            <span className="shrink-0 text-[11px] font-normal dim">约 {info.minutes} 分钟</span>
           </h1>
           {stage === 'newwords' && (
             <button
@@ -171,7 +170,7 @@ export function SessionRunner() {
           )}
         </div>
       ),
-    [allDone, info.zh, info.minutes, stage, loading],
+    [allDone, info.zh, stage, loading],
   );
   useTopbarSlot(topbarSlot);
 
