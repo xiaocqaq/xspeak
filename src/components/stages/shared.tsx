@@ -93,6 +93,28 @@ export function Speak({
 const TIP_DELAY_MS = 500;
 
 /**
+ * 把一个瞬时为真的标志「压熟」：flag 连续为真超过 delayMs 才返回 true，
+ * flag 一转假立刻返回 false 并取消计时。
+ *
+ * 命中缓存时「合成」只花几十毫秒，直接跟着 synthesizing 走的话按钮文字/图标
+ * 会一闪而过（「停止」↔「生成中…」抖一下）。听力操作条上的播放按钮和 SpeechTip
+ * 共用这一套延迟，两处的出现时机才一致 —— 之前浮层做了 500ms 延迟、按钮没做，
+ * 于是缓存命中时浮层不闪、按钮却闪。
+ */
+export function useDelayedTrue(flag: boolean, delayMs: number = TIP_DELAY_MS): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!flag) {
+      setOn(false);
+      return;
+    }
+    const t = setTimeout(() => setOn(true), delayMs);
+    return () => clearTimeout(t);
+  }, [flag, delayMs]);
+  return on;
+}
+
+/**
  * 在线朗读的状态提示（听力/阅读专用）。
  *
  * 合成中弹「语音生成中…」，失败弹原因。
@@ -115,18 +137,8 @@ export function SpeechTip({
   /** 有重试回调时，错误提示里带一颗「重试」按钮。 */
   onRetry?: () => void;
 }) {
-  const [ripe, setRipe] = useState(false);
-
-  useEffect(() => {
-    if (!synthesizing) {
-      // 合成结束（或压根没开始）：立刻收起，并且把计时器取消掉，
-      // 否则快速连点两次时前一个的计时器会在第二次刚开始时就把提示弹出来
-      setRipe(false);
-      return;
-    }
-    const t = setTimeout(() => setRipe(true), TIP_DELAY_MS);
-    return () => clearTimeout(t);
-  }, [synthesizing]);
+  // 和听力播放按钮共用同一套 500ms 延迟：见 useDelayedTrue。
+  const ripe = useDelayedTrue(synthesizing);
 
   // 失败信息优先且不延迟：出错时不该还挂着"生成中"，也不该让人再等半秒才知道
   if (error) {

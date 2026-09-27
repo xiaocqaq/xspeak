@@ -14,6 +14,7 @@ import {
   MOBILE_ACTION_BAR_PAD,
   SpeechTip,
   TappableText,
+  useDelayedTrue,
   useMaterialSheet,
 } from './shared';
 import { buildServerVoiceCast, buildVoiceCast, useTts, warmServerSpeech } from '@/hooks/useSpeech';
@@ -51,6 +52,11 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
   const dialogue = payload.dialogue ?? [];
   const questions = payload.questions ?? [];
   const allAnswered = questions.length > 0 && questions.every((_, i) => answers[i] !== undefined);
+
+  // 「生成中…」压 500ms 才显示：命中缓存的取音只花几十毫秒，直接跟着 synthesizing
+  // 走会让播放按钮每句闪一下（停止↔生成中）。和 SpeechTip 共用同一套延迟，
+  // 两处出现时机一致 —— 真需要等（没热完、慢速档没预热）才提示。
+  const waiting = useDelayedTrue(playingAll && synthesizing);
 
   // 播放失败或被另一个朗读按钮接管后，同步复位连播按钮；重试只需点一次。
   useEffect(() => {
@@ -198,7 +204,7 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
 
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={playAll} disabled={!supported} aria-busy={playingAll && synthesizing}>
-            {playingAll && synthesizing ? (
+            {playingAll && waiting ? (
               <Loader2 className="size-4 animate-spin" aria-hidden />
             ) : playingAll ? (
               <Pause className="size-4" aria-hidden />
@@ -212,7 +218,7 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
               短的居中，播放全程按钮纹丝不动。
             */}
             <span className="inline-block w-16 whitespace-nowrap text-center">
-              {playingAll ? (synthesizing ? '生成中…' : '停止') : '播放对话'}
+              {playingAll ? (waiting ? '生成中…' : '停止') : '播放对话'}
             </span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => setSlow((s) => !s)}>
