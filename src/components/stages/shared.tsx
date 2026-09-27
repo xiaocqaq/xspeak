@@ -10,7 +10,7 @@ import { probeServerSpeech, useTts } from '@/hooks/useSpeech';
 import type { LookupData } from '@/lib/ai/schemas';
 import { cn } from '@/lib/cn';
 
-/** 朗读按钮。整站英文内容旁边都挂一个。 */
+/** 朗读按钮。整站英文内容旦边都挂一个。 */
 export function Speak({
   text,
   className,
