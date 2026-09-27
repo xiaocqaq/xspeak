@@ -205,7 +205,15 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
             ) : (
               <Play className="size-4" aria-hidden />
             )}
-            {playingAll ? (synthesizing ? '生成中…' : '停止') : '播放对话'}
+            {/*
+              定宽标签：三态「播放对话 / 生成中… / 停止」字数不同，不定宽的话
+              连播每合成一句按钮就宽窄跳一下，右边的「正常 / 看原文 / 进度」跟着
+              横移 —— 用户看到的就是每往下一句整行抖一下。宽度按最长的四字留，
+              短的居中，播放全程按钮纹丝不动。
+            */}
+            <span className="inline-block w-16 whitespace-nowrap text-center">
+              {playingAll ? (synthesizing ? '生成中…' : '停止') : '播放对话'}
+            </span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => setSlow((s) => !s)}>
             {slow ? <Turtle className="size-4" aria-hidden /> : <Rabbit className="size-4" aria-hidden />}
