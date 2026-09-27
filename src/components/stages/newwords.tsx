@@ -188,7 +188,7 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
       */
       asideFrom="xl"
       // 底部操作条在窄屏是 fixed 的，脱离了文档流，得自己给内容让出这块高度
-      className="max-xl:pb-[calc(6rem+env(safe-area-inset-bottom))]"
+      className="max-xl:pb-[calc(6.75rem+env(safe-area-inset-bottom))]"
       aside={
         <StickyColumn>
           <ColumnLabel>今天这批（{words.length}）</ColumnLabel>
@@ -382,7 +382,8 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
           'max-xl:fixed max-xl:inset-x-0 max-xl:bottom-0 max-xl:z-20',
           'max-xl:border-t max-xl:border-[var(--hairline)] max-xl:bg-[var(--bg)]',
           'max-xl:px-4 max-xl:pt-3 sm:max-xl:px-6',
-          'max-xl:pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+          // 底边多留一档：按钮从贴边抬起来一点，拇指点着更顺手（和 MobileActionBar 同步）。
+          'max-xl:pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
           'lg:max-xl:pl-[calc(var(--sidebar-w)+1.5rem)]',
         )}
       >
