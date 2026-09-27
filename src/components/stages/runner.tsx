@@ -26,7 +26,7 @@ export function SessionRunner() {
   const params = useSearchParams();
   const urlStage = params.get('stage') as Stage | null;
   const [stage, setStage] = useState<Stage>(
-    urlStage && STAGES.includes(urlStage) ? urlStage : 'warmup',
+    urlStage && STAGES.includes(urlStage) ? urlStage : STAGES[0],
   );
   const [data, setData] = useState<StageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

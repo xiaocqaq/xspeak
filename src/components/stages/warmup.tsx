@@ -158,7 +158,7 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
       <div className="space-y-4">
         <StageIntro tone="neutral">{payload.intro_zh}</StageIntro>
         <Button className="w-full" onClick={() => onDone()} loading={submitting}>
-          进入新词环节
+          完成今天的学习
         </Button>
       </div>
     );

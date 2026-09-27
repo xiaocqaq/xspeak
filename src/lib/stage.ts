@@ -98,8 +98,8 @@ async function generateStage(
     case 'warmup': {
       const words = await getWordsByIds(session.review_word_ids);
       if (!words.length) {
-        // 第一天没有可复习的内容，给一个明确的空态而不是硬造题
-        payload = { intro_zh: '今天还没有到期的复习内容，直接从新词开始吧。', items: [] };
+        // 复习是最后一环，没有到期内容就是今天的收尾空态
+        payload = { intro_zh: '今天没有需要复习的旧词，学习到这儿就全部完成了。', items: [] };
         break;
       }
       const seenRows = await all<{ word_id: number; seen_contexts: string[] | null }>(

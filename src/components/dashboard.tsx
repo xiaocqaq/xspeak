@@ -225,7 +225,7 @@ export function Dashboard() {
                   className="min-w-0 px-3 sm:px-7"
                   loading={switching || finishing}
                   onClick={() =>
-                    router.push(finished ? '/learn' : `/learn?stage=${nextStage ?? 'warmup'}`)
+                    router.push(finished ? '/learn' : `/learn?stage=${nextStage ?? STAGES[0]}`)
                   }
                 >
                   {finished ? (
@@ -260,7 +260,7 @@ export function Dashboard() {
                         setData(d);
                         setSwitching(false);
                         setFinishing(true);
-                        router.push('/learn?stage=warmup');
+                        router.push(`/learn?stage=${STAGES[0]}`);
                       })
                       .catch((e) => {
                         setError(e.message);
@@ -388,7 +388,7 @@ export function Dashboard() {
                 <h3 className="text-sm">到期要复习</h3>
               </div>
               {reviewWords.length === 0 ? (
-                <p className="mt-3 text-sm dim">今天没有到期的词。热身环节会直接跳过。</p>
+                <p className="mt-3 text-sm dim">今天没有到期的词。复习环节会直接跳过。</p>
               ) : (
                 <>
                   <p className="mt-3 text-sm dim">

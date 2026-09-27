@@ -3,22 +3,28 @@
 /*
  * 顺序就是每天走的顺序，最后一个环节走完算今天完成。
  * 原来末尾还有一个 writing（写作批改），已经整条去掉 ——
- * 手机上打一段英文的成本太高，实际没人在这一步停下来写，
- * 收尾改由 speaking 承担。
+ * 手机上打一段英文的成本太高，实际没人在这一步停下来写。
+ *
+ * 2026-09-27：把复习（原「热身复习」，排第一）挪到最后。原因是生成成本：
+ * 新词不调阻塞 AI（词从库里派生，秒开），而复习要现出完形、其余四环各一发
+ * AI（20~40s）。进门先落在秒开的新词上，用户答新词的这几分钟里，后台
+ * （session/today 的 after() + 前端 prefetchNext）正好把语法/听力/阅读/口语/
+ * 复习依次生成好，走到哪一环内容都已就位。复习放末尾也顺理成章：先学新的、
+ * 最后把这批 + 到期的旧词一起过一遍巩固。
  */
 export const STAGES = [
-  'warmup',
   'newwords',
   'grammar',
   'listening',
   'reading',
   'speaking',
+  'warmup',
 ] as const;
 
 export type Stage = (typeof STAGES)[number];
 
 export const STAGE_META: Record<Stage, { zh: string; en: string; minutes: number; icon: string }> = {
-  warmup: { zh: '热身复习', en: 'Warm-up', minutes: 5, icon: 'flame' },
+  warmup: { zh: '复习', en: 'Review', minutes: 5, icon: 'flame' },
   newwords: { zh: '新词', en: 'New words', minutes: 6, icon: 'sparkles' },
   grammar: { zh: '语法', en: 'Grammar', minutes: 5, icon: 'ruler' },
   listening: { zh: '听力', en: 'Listening', minutes: 4, icon: 'headphones' },

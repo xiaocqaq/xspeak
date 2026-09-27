@@ -215,7 +215,7 @@ export function ImportPage() {
             </div>
           )}
 
-          <p className="text-xs dim">这些词从明天起会出现在热身复习里，而且每次都换新句子。</p>
+          <p className="text-xs dim">这些词从明天起会出现在复习里，而且每次都换新句子。</p>
         </Card>
       )}
 

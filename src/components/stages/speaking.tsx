@@ -178,8 +178,9 @@ export function SpeakingStage({ payload, meta, onDone, submitting }: StageProps<
         </CallSheet>
 
         {/*
-          口语是今天最后一个环节，所以这个按钮是"收工"，不再是"去写作"。
-          没聊过就压成次要样式：真正该点的是上面的开始对话，不能让跳过的按钮更显眼。
+          2026-09-27 起复习挪到最后一环，口语后面还有复习收尾，所以这个按钮是
+          「去复习」而不是「完成今天」。没聊过就压成次要样式：真正该点的是上面的
+          开始对话，不能让跳过的按钮更显眼。
         */}
         <MobileActionBar>
           <Button
@@ -188,7 +189,7 @@ export function SpeakingStage({ payload, meta, onDone, submitting }: StageProps<
             onClick={finish}
             loading={submitting}
           >
-            {turns === 0 ? '跳过对话，完成今天' : `聊了 ${turns} 轮，完成今天`}
+            {turns === 0 ? '跳过对话，去复习' : `聊了 ${turns} 轮，去复习`}
           </Button>
         </MobileActionBar>
       </Split>
