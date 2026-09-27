@@ -460,7 +460,20 @@ h4 {
   animation: pulse-ring 1.4s infinite;
 }
 
-/* 尊重系统的"减少动效"设置 */
+/**
+ * 尊重系统的"减少动效"设置。
+ *
+ * 全站一刀切：入场位移（fade-up / stagger）、hover 位移、进度条补间全部失效，
+ * 内容直接到位。这里管的是**会让人不适的位移和缩放**，不是所有动画。
+ *
+ * 两个例外，都是刻意留的：
+ * ① 转圈（animate-spin）和骨架屏呼吸（animate-pulse）—— 它们是"还在工作"
+ *    的唯一视觉信号。全局的 animation-iteration-count: 1 会让转圈转一下就停，
+ *    界面看着像卡死，用户反而会去重复点击。它们只是小范围匀速旋转/明暗变化，
+ *    不含位移，不属于前庭敏感动效。所以显式把时长和循环次数还回去。
+ * ② 录音呼吸圈（.recording）不豁免：它有"正在录音"的文字和颜色共同表达，
+ *    停住不丢信息。
+ */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -468,6 +481,15 @@ h4 {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+  .animate-pulse {
+    animation-duration: 2s !important;
+    animation-iteration-count: infinite !important;
   }
   .card-interactive:hover {
     transform: none;

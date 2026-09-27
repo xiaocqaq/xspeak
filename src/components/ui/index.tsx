@@ -303,6 +303,7 @@ export function Toast({
   show,
   tone = 'success',
   place = 'bottom',
+  action,
 }: {
   message: string;
   show: boolean;
@@ -315,6 +316,15 @@ export function Toast({
    * 提示压在屏幕底部容易被拇指挡住、也离视线焦点太远。
    */
   place?: 'bottom' | 'top';
+  /**
+   * 可选的操作按钮（目前只有朗读失败时的「重试」）。
+   *
+   * 两个细节：
+   * ① 容器是 pointer-events-none（横跨视口，否则会吃掉底部一条带子的点击），
+   *    所以按钮自己要把 pointer-events 收回来，否则看得见点不着。
+   * ② 带按钮时外形从胶囊换成圆角矩形 —— 胶囊两端的大圆弧会把按钮挤变形。
+   */
+  action?: { label: string; onClick: () => void };
 }) {
   /*
    * 配色跟着 Badge 的同名 tone 走，只有一处不同：暗色底不用 brand-900/50 而是实色。
@@ -362,18 +372,35 @@ export function Toast({
         'pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4',
         places[place],
       )}
-      role="status"
-      aria-live="polite"
     >
       {show && (
         <div
           className={cn(
-            'fade-up rounded-full border px-3.5 py-1.5 text-[13px] font-semibold',
+            'fade-up flex items-center gap-2 border px-3.5 py-1.5 text-[13px] font-semibold',
             'shadow-[var(--shadow-lifted)]',
+            action ? 'rounded-2xl' : 'rounded-full',
             tones[tone],
           )}
         >
-          {message}
+          {/*
+            aria-live 挂在文字上而不是整个容器上：容器里可能还有「重试」按钮，
+            整个容器当 live region 会把按钮也塞进去，读屏进出都不方便。
+          */}
+          <span role="status" aria-live="polite">
+            {message}
+          </span>
+          {action && (
+            <button
+              type="button"
+              onClick={action.onClick}
+              className={cn(
+                'pointer-events-auto shrink-0 rounded-lg border border-current px-2 py-0.5',
+                'text-[12px] transition-colors hover:bg-[var(--surface-hover)]',
+              )}
+            >
+              {action.label}
+            </button>
+          )}
         </div>
       )}
     </div>

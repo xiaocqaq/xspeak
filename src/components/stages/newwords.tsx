@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   clearProgress,
   fingerprint as fpOf,
@@ -12,7 +12,7 @@ import { Check, ChevronLeft, ChevronRight, Lightbulb } from 'lucide-react';
 import { Badge, Button, Card, Progress } from '@/components/ui';
 import { ColumnLabel, Speak, Split, StageIntro, StickyColumn, TappableText } from './shared';
 import type { StageProps } from './types';
-import { useTts } from '@/hooks/useSpeech';
+import { probeServerSpeech, useTts } from '@/hooks/useSpeech';
 import { cn } from '@/lib/cn';
 
 type AiWord = {
@@ -106,6 +106,17 @@ export function NewWordsStage({ payload, meta, onDone, onRegenerate, submitting 
   });
   // 搭配 chip 整块可点朗读，所以这里直接用 speak，不再往 chip 里塞 Speak 按钮
   const { speak, supported: ttsOk } = useTts();
+  /*
+   * 这些 chip 是直接调 speak() 的，没走 Speak 组件，所以要自己探一次缓存：
+   * 探过之后点下去才能同步决定「真嗓音」还是「先出声、再后台热身」。
+   * 依赖用内容指纹而不是 words 数组 —— 数组每次渲染都可能是新对象，
+   * 那样会把已经探过的句子反复重探（服务端挂掉时尤其明显）。
+   */
+  const collocationsKey = words.map((w) => w.collocations.join('|')).join('||');
+  useEffect(() => {
+    probeServerSpeech(words.flatMap((w) => w.collocations));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collocationsKey]);
 
   if (words.length === 0) {
     return (

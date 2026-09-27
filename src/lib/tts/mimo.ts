@@ -120,17 +120,29 @@ export async function mimoSynthesize(
   return audio;
 }
 
-/** 缓存优先，和 kokoro.ts 的 speakCached 同构。 */
-export async function mimoSpeakCached(
+type CachedSpeech = { audio: Buffer; hit: boolean; key: string };
+
+// ponytail: 同一进程内合并预热、播放和 Range 请求；多实例部署需共享任务锁。
+const inFlight = new Map<string, Promise<CachedSpeech>>();
+
+/** 缓存优先；同一音频只合成一次，失败后释放以便重试。 */
+export function mimoSpeakCached(
   text: string,
   voice: string,
   speed: number,
-): Promise<{ audio: Buffer; hit: boolean; key: string }> {
+): Promise<CachedSpeech> {
   const key = cacheKey(text, voice, speed);
-  const cached = await readCache(key);
-  if (cached) return { audio: cached, hit: true, key };
+  const running = inFlight.get(key);
+  if (running) return running;
 
-  const audio = await mimoSynthesize(text, voice);
-  await writeCache(key, audio);
-  return { audio, hit: false, key };
+  const job = (async () => {
+    const cached = await readCache(key);
+    if (cached) return { audio: cached, hit: true, key };
+
+    const audio = await mimoSynthesize(text, voice);
+    await writeCache(key, audio);
+    return { audio, hit: false, key };
+  })().finally(() => inFlight.delete(key));
+  inFlight.set(key, job);
+  return job;
 }

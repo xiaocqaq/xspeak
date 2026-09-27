@@ -62,6 +62,8 @@ export function SettingsPage() {
    */
   const [serverTts, setServerTts] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsPreviewAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => ttsPreviewAbort.current?.abort(), []);
   const { speak, voices, supported } = useTts(user?.voice ?? undefined);
 
   const load = () => {
@@ -200,7 +202,9 @@ export function SettingsPage() {
     setTtsError(null);
     audioRef.current?.pause();
     try {
-      await previewServerVoice(PREVIEW_TEXT, voiceId, user.speech_pace);
+      ttsPreviewAbort.current?.abort();
+      ttsPreviewAbort.current = new AbortController();
+      await previewServerVoice(PREVIEW_TEXT, voiceId, user.speech_pace, ttsPreviewAbort.current.signal);
     } catch (e) {
       setTtsError((e as Error).message);
     } finally {

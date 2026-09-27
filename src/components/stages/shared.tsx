@@ -1,12 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, Check, Loader2, Plus, Volume2, X } from 'lucide-react';
+import { BookOpen, Check, Loader2, Plus, Square, Volume2, X } from 'lucide-react';
 import { Badge, Button, Spinner, Toast } from '@/components/ui';
 import { useSheetBehavior } from '@/components/sheet';
 import { apiPost } from '@/lib/fetcher';
 import { sentenceWindow } from '@/lib/sentence-window';
-import { useTts } from '@/hooks/useSpeech';
+import { probeServerSpeech, useTts } from '@/hooks/useSpeech';
 import type { LookupData } from '@/lib/ai/schemas';
 import { cn } from '@/lib/cn';
 
@@ -29,25 +29,56 @@ export function Speak({
    */
   onlineOnly?: boolean;
 }) {
-  const { speak, speaking, synthesizing, speechError, supported } = useTts();
-  // onlineOnly 不依赖 speechSynthesis，浏览器不支持也照样能放在线音频
-  if (!supported && !onlineOnly) return null;
+  const { speak, stop, speaking, synthesizing, speechError, supported } = useTts();
+  useEffect(() => stop, [text, slow, onlineOnly, stop]);
+  /*
+   * 挂载时探一次服务端缓存。必须在点击之前探到，点击路径才能同步决定
+   * 「真嗓音」还是「先出声再后台热身」—— 点击后再探就得 await，而 await 之后
+   * play() 已经出了 iOS 的用户手势窗口。onlineOnly 不需要，它永远等真嗓音。
+   */
+  useEffect(() => {
+    if (!onlineOnly) probeServerSpeech([text]);
+  }, [text, onlineOnly]);
+  if (!supported) return null;
+  const actionLabel = synthesizing
+    ? '语音生成中，完成后自动播放'
+    : speaking ? '停止朗读' : label ?? `朗读：${text.slice(0, 40)}`;
   return (
     <>
       <button
         type="button"
-        onClick={() => speak(text, { slow, onlineOnly })}
-        aria-label={label ?? `朗读：${text.slice(0, 40)}`}
+        onClick={() => speaking ? stop() : speak(text, { slow, onlineOnly })}
+        // 合成中也允许再点一次取消，不能让人对着转圈等下去
+        disabled={!text.trim()}
+        aria-label={actionLabel}
+        title={actionLabel}
+        aria-busy={synthesizing}
+        aria-pressed={speaking}
         className={cn(
-          'inline-flex shrink-0 items-center justify-center rounded-md p-1.5 transition-colors',
+          'inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-md p-1.5 transition-colors',
           'text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-brand-600',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600',
           speaking && 'text-brand-600',
           className,
         )}
       >
-        <Volume2 className={cn('size-4', speaking && 'animate-pulse')} aria-hidden />
+        {synthesizing ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+        ) : speaking ? (
+          <Square className="size-3.5" aria-hidden />
+        ) : (
+          <Volume2 className="size-4" aria-hidden />
+        )}
       </button>
-      {onlineOnly && <SpeechTip synthesizing={synthesizing} error={speechError} />}
+      {/*
+        失败时给一条退路：这个按钮散布在十几个纯展示组件里，用户要重试得先
+        找到自己刚点的是哪一个。直接把「重试」放在提示里，按一下就再来一次。
+      */}
+      <SpeechTip
+        synthesizing={synthesizing}
+        error={speechError}
+        onRetry={() => speak(text, { slow, onlineOnly })}
+      />
     </>
   );
 }
@@ -77,9 +108,12 @@ const TIP_DELAY_MS = 500;
 export function SpeechTip({
   synthesizing,
   error,
+  onRetry,
 }: {
   synthesizing: boolean;
   error: string | null;
+  /** 有重试回调时，错误提示里带一颗「重试」按钮。 */
+  onRetry?: () => void;
 }) {
   const [ripe, setRipe] = useState(false);
 
@@ -95,8 +129,18 @@ export function SpeechTip({
   }, [synthesizing]);
 
   // 失败信息优先且不延迟：出错时不该还挂着"生成中"，也不该让人再等半秒才知道
-  if (error) return <Toast message={error} show tone="danger" place="top" />;
-  return <Toast message="语音生成中…" show={synthesizing && ripe} tone="warn" place="top" />;
+  if (error) {
+    return (
+      <Toast
+        message={error}
+        show
+        tone="danger"
+        place="top"
+        action={onRetry && { label: '重试', onClick: onRetry }}
+      />
+    );
+  }
+  return <Toast message="语音生成中，完成后自动播放…" show={synthesizing && ripe} tone="warn" place="top" />;
 }
 
 /*

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { readPace, subscribePace } from '@/lib/pace-store';
 import { readVoice, subscribeVoice } from '@/lib/voice-store';
 import { pace } from '@/lib/voice-options';
-import { DEFAULT_SERVER_VOICE, SERVER_VOICES, preferredMimoVoiceId } from '@/lib/tts/server-voice-list';
+import { DEFAULT_SERVER_VOICE, SERVER_VOICES, playbackRateFor, preferredMimoVoiceId } from '@/lib/tts/server-voice-list';
 import { withBase } from '@/lib/base-path';
 import type { SpeechPace } from '@/lib/types';
 
@@ -123,9 +123,11 @@ export function rankEnglishVoices(voices: SpeechSynthesisVoice[]): SpeechSynthes
  * 模块级元素反复用 —— 每次朗读都新建一个的话，第一次之后全被拦。
  */
 let sharedAudio: HTMLAudioElement | null = null;
+/** 整个页面只有一个播放所有者，换按钮先取消旧请求和它的回调。 */
+let activePlayback: (() => void) | null = null;
 
 function getAudio(): HTMLAudioElement | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
   if (!sharedAudio) {
     sharedAudio = new Audio();
     sharedAudio.preload = 'auto';
@@ -134,40 +136,11 @@ function getAudio(): HTMLAudioElement | null {
 }
 
 /**
- * 服务端出声前等多久就让浏览器语音包顶上（毫秒）—— 按块长阶梯。
- *
- * - ≤20 字符（单词/短语）：700ms。高频小操作要极速反馈；超时的后台下载
- *   照旧写盘，第二次点同一句就走缓存拿到好声音。
- * - 更长的按 2s 起步、每多 100 字符再加 1s、封顶 6s：MiMo 冷合成实测
- *   短句 1.5s、长句 3-4s；300 字符的大块硬卡 2s 必然每次
- *   超时退回系统语音，等于白配了音色。封顶是因为等真嗓音的耐心有限，
- *   兜底线再高也不能让用户对着转圈的按钮干等。
- * - 听力的整段对话在进环节时就预热好了（warmServerSpeech），轮到播放
- *   基本都命中缓存，预算只是兜底线的刻度，不是正常等待时长。
+ * 冷合成也必须一次点击后自动播放。原来的 700ms 预算会在音频到达前切走，
+ * iOS 上异步回退的系统朗读又可能被手势策略拦住，造成「第二次才响」。
+ * 统一等待实际完成；35s 覆盖服务端默认 30s 超时和传输余量，真失败才降级。
  */
-const SERVER_TTS_BUDGET_MS = 700;
-/** 快慢档分界：只有单词/短语级的小文本才吃极速档。 */
-const SERVER_TTS_SHORT_CHARS = 20;
-const SERVER_TTS_BUDGET_BASE_MS = 2000;
-const SERVER_TTS_BUDGET_PER_100_CHARS_MS = 1000;
-const SERVER_TTS_BUDGET_MAX_MS = 6000;
-
-/**
- * onlineOnly（听力/阅读）的硬上限：等到这个时间还没出声就放弃这一句。
- *
- * 和上面那套「兜底预算」不是一回事：那是"等多久就换系统语音包"，这是
- * "等多久算彻底失败"。既然没有退路，就该等得起 —— 在线合成实测 3s 左右，
- * 20s 给足了首次冷合成 + 网络抖动的余量，同时不至于让人对着转圈无限等。
- */
-const ONLINE_ONLY_HARD_MS = 20_000;
-
-function serverTtsBudgetMs(chars: number): number {
-  if (chars <= SERVER_TTS_SHORT_CHARS) return SERVER_TTS_BUDGET_MS;
-  const scaled =
-    SERVER_TTS_BUDGET_BASE_MS +
-    Math.floor(chars / 100) * SERVER_TTS_BUDGET_PER_100_CHARS_MS;
-  return Math.min(scaled, SERVER_TTS_BUDGET_MAX_MS);
-}
+const SERVER_TTS_HARD_MS = 35_000;
 
 /**
  * 服务端连续失败几次就这一整个会话不再试。
@@ -257,49 +230,55 @@ export function splitSpeechChunks(text: string, max = SERVER_TTS_MAX_CHARS): str
  * 换成浏览器语音包读出来等于没试听 —— 宁可转圈等几秒（第一次现合成 1.5s 左右，
  * 之后同一句话就命中缓存）。所以调用方要自己画 loading。
  */
-export async function previewServerVoice(text: string, voiceId: string, paceKey: SpeechPace): Promise<void> {
+export async function previewServerVoice(
+  text: string,
+  voiceId: string,
+  paceKey: SpeechPace,
+  signal?: AbortSignal,
+): Promise<void> {
   const audio = getAudio();
   if (!audio) throw new Error('当前环境不能播放音频');
-  if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-  audio.pause();
-  audio.muted = false;
-  audio.playbackRate = 1;
-  const qs = new URLSearchParams({ text, voice: voiceId, pace: paceKey });
-  audio.src = withBase(`/api/speak?${qs.toString()}`);
-  /*
-   * MiMo 恒按 1.0 合成，试听也要按档位调 playbackRate，不然用户选了慢档
-   * 听到的却是正常速度，试听就骗人了。公式和 speak() 里那条一致。
-   */
-  const base = pace(paceKey).ttsSpeed;
-  // 与服务端 playbackRateFor 同式（含 1.15 boost）
-  const rate = Math.min(1.6, Math.round(base * 1.15 * 100) / 100);
-  if (rate !== 1) {
-    try {
-      audio.playbackRate = rate;
-    } catch {
-      /* 忽略 */
-    }
-  }
+  if (signal?.aborted) return;
+  activePlayback?.();
+  window.speechSynthesis?.cancel();
+  const rate = playbackRateFor(pace(paceKey).ttsSpeed, false);
   await new Promise<void>((resolve, reject) => {
-    const off = () => {
+    let done = false;
+    const finish = (error?: Error) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      audio.removeEventListener('playing', onPlaying);
       audio.removeEventListener('ended', onEnd);
       audio.removeEventListener('error', onErr);
+      signal?.removeEventListener('abort', cancel);
+      if (activePlayback === cancel) {
+        activePlayback = null;
+        audio.pause();
+      }
+      if (error) reject(error);
+      else resolve();
     };
-    const onEnd = () => {
-      off();
-      resolve();
+    const cancel = () => finish();
+    const onPlaying = () => {
+      window.clearTimeout(timer);
+      audio.playbackRate = rate;
     };
-    const onErr = () => {
-      off();
-      // 拿不到具体状态码（media error 不带 HTTP 信息），只能给一句能行动的话
-      reject(new Error('试听失败，服务端音色暂时用不了'));
-    };
+    const onEnd = () => finish();
+    const onErr = () => finish(new Error('试听失败，服务端音色暂时用不了'));
+    const timer = window.setTimeout(() => finish(new Error('试听加载超时，请稍后重试')), SERVER_TTS_HARD_MS);
+    activePlayback = cancel;
+    signal?.addEventListener('abort', cancel, { once: true });
+    audio.addEventListener('playing', onPlaying);
     audio.addEventListener('ended', onEnd);
     audio.addEventListener('error', onErr);
-    audio.play().catch((e) => {
-      off();
-      reject(e instanceof Error ? e : new Error(String(e)));
-    });
+    audio.pause();
+    audio.muted = false;
+    const qs = new URLSearchParams({ text, voice: voiceId, pace: paceKey });
+    audio.src = withBase(`/api/speak?${qs.toString()}`);
+    audio.load();
+    audio.playbackRate = rate;
+    audio.play().catch((e) => finish(e instanceof Error ? e : new Error(String(e))));
   });
 }
 
@@ -316,6 +295,51 @@ export async function serverVoicesAvailable(): Promise<boolean> {
     return r.status === 400;
   } catch {
     return false;
+  }
+}
+
+/**
+ * 服务端缓存命中情况：qs → 命中/未命中。**必须在点击之前就拿到结果**。
+ *
+ * 为什么不能"点了再探"：`<audio>.play()` 得在点击的同一个 tick 里调用，否则
+ * iOS 判它不属于用户手势、直接拒播（这也是上一版"点两次才响"的成因之一）。
+ * 所以顺序反过来 —— 内容渲染时就 HEAD 探一次，点的时候同步查表：
+ *   'hit'      立刻走真嗓音（几十毫秒，本来也没什么好优化）
+ *   'miss'     当场用系统语音出声（先有声音，不用干等），同时把这句排进后台合成；
+ *              这一次听到的是系统英语，下一次点（或下次进这个环节）就是真嗓音
+ *   undefined  没探到/探失败：保持原样，等真嗓音
+ * onlineOnly（听力/阅读）不看这张表：那两处宁可等，也不换掉训练材料。
+ */
+const speechCache = new Map<string, 'hit' | 'miss'>();
+/** 同一句只探一次：页面里十个词的朗读按钮同时挂载，也只发一个 HEAD。 */
+const probing = new Set<string>();
+
+/**
+ * 渲染时调用：问服务端这句的音频在不在缓存里，结果记进 speechCache。
+ * 只处理"整句一块"的文本 —— 长文切块后是逐块请求，预检表反而对不上。
+ */
+export function probeServerSpeech(texts: string[]): void {
+  if (typeof fetch === 'undefined') return;
+  // 音色/档位与 speak() 用同一套解析，否则算出来的 qs 和播放时的缓存键对不上
+  const voice = preferredMimoVoiceId(readVoice()) ?? DEFAULT_SERVER_VOICE;
+  const paceKey = readPace();
+  for (const raw of texts) {
+    const body = raw.replace(/\s+/g, ' ').trim();
+    if (!body || body.length > SERVER_TTS_TOTAL_CHARS) continue;
+    const chunks = splitSpeechChunks(body);
+    if (chunks.length !== 1) continue;
+    const qs = new URLSearchParams({ text: chunks[0]!, voice, pace: paceKey }).toString();
+    if (speechCache.has(qs) || probing.has(qs)) continue;
+    probing.add(qs);
+    fetch(withBase(`/api/speak?${qs}`), { method: 'HEAD' })
+      .then((r) => {
+        if (r.status === 200) speechCache.set(qs, 'hit');
+        else if (r.status === 404) speechCache.set(qs, 'miss');
+        // 其它状态（401/503/400）说明服务端这条路现在不可用，不能记成 miss ——
+        // 那会在点击时把人推去系统语音，而其实只是暂时探不通
+      })
+      .catch(() => {})
+      .finally(() => probing.delete(qs));
   }
 }
 
@@ -338,6 +362,8 @@ function pumpWarm() {
     fetch(withBase(`/api/speak?${qs}`))
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
+        // 合成完写盘了，预检表跟着更新：下次点击直接走真嗓音，不再退回系统语音
+        speechCache.set(qs, 'hit');
         // 响应体读完才算合成完写盘 —— 不 body 的话连接一断缓存就没了
         return r.arrayBuffer();
       })
@@ -372,22 +398,16 @@ function startWarmImmediate(qsList: string[]) {
  * 返回排队句数（调试用）。
  */
 export function warmServerSpeech(
-  lines: { text: string; voice?: string }[], 
+  lines: { text: string; voice?: string }[],
   paceKey: SpeechPace,
 ): number {
   const qsList = lines
     .filter((l) => l.text.trim() && l.text.length <= SERVER_TTS_TOTAL_CHARS)
-    .map((l) => {
-      const q = new URLSearchParams({
-        text: l.text,
-        // 预热是"用户已经进环节了"的路径，走 MiMo 快路（2026-08-28 二次调整）：
-        // 原来默认 af_heart 想省钱，但预热跑得比用户点播放还慢就白热了。
-        // 必须和播放时请求的音色一致，否则热的是另一个缓存键，等于没热。
-        voice: l.voice ?? DEFAULT_SERVER_VOICE,
-        pace: paceKey,
-      });
-      return q.toString();
-    });
+    .flatMap((l) => splitSpeechChunks(l.text).map((text) => new URLSearchParams({
+      text,
+      voice: l.voice ?? DEFAULT_SERVER_VOICE,
+      pace: paceKey,
+    }).toString()));
   enqueueWarm(qsList);
   return qsList.length;
 }
@@ -400,417 +420,256 @@ export function warmServerSpeech(
  *   偏好（voice-store），这才是"设置里选的音色到处都生效"的那条路。
  */
 export function useTts(preferredVoice?: string) {
+  // speaking 表示本次朗读仍在进行；synthesizing 单独区分等待音频和真正出声。
   const [speaking, setSpeaking] = useState(false);
-  /**
-   * 「在线语音正在合成、还没出声」（onlineOnly 模式专用，2026-08-28）。
-   *
-   * 和 speaking 分开：speaking 从按下那一刻就点亮（让按钮有反应），
-   * 但听力/阅读需要区分「已经在响」和「还在等」——只有后者才该显示
-   * 「语音生成中…」的 tip。出第一声（playing 事件）时置回 false。
-   */
   const [synthesizing, setSynthesizing] = useState(false);
-  /** onlineOnly 模式下合成失败的原因。有退路的普通模式不用它（静默退回本地）。 */
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  /**
-   * 语速档位。朗读按钮散布在十几个纯展示组件里，都拿不到用户档案，
-   * 所以从 localStorage 缓存同步读（真值在数据库，由 /api/profile 回填）。
-   * 放 ref 而不是 state：speak 是回调，只在触发那一刻需要最新值，
-   * 档位变化不该让所有挂了朗读按钮的组件重渲染。
-   */
+  const localSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const supported = typeof window !== 'undefined' && (localSupported || typeof Audio !== 'undefined');
   const paceRef = useRef<SpeechPace>(readPace());
-  useEffect(() => subscribePace((p) => (paceRef.current = p)), []);
-  /** 音色偏好，同上：ref + 订阅，读的是同一份 localStorage 缓存。 */
   const voiceRef = useRef<string | null>(readVoice());
+  useEffect(() => subscribePace((p) => (paceRef.current = p)), []);
   useEffect(() => subscribeVoice((v) => (voiceRef.current = v)), []);
 
   useEffect(() => {
-    if (!supported) return;
+    if (!localSupported) return;
     const load = () => setVoices(window.speechSynthesis.getVoices());
     load();
     window.speechSynthesis.addEventListener('voiceschanged', load);
     return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
-  }, [supported]);
+  }, [localSupported]);
 
   const pickVoice = useCallback(() => {
-    if (!voices.length) return undefined;
-    /*
-     * 想要哪个包：调用点显式指定的优先，否则用用户存下来的偏好。
-     * voiceRef 是 ref，所以这里读到的是"按下朗读那一刻"的值 ——
-     * 在设置页改完音色，已经挂载的那些朗读按钮不用重渲染也会跟上。
-     */
     const want = preferredVoice ?? voiceRef.current;
-    if (want) {
-      const exact = voices.find((v) => v.name === want);
-      // 找不到就往下走默认分支：换了设备、或者系统卸了这个语音包，
-      // 宁可用别的嗓音读出来，也不能哑掉。
-      if (exact) return exact;
-    }
-    /*
-     * 没有指定（或指定的包不在了）就挑系统里最好听的英文包。
-     * 排序规则见 rankEnglishVoices —— 不能只看 localService，
-     * iOS 上那个字段恒为 true，等于没筛。
-     */
-    return rankEnglishVoices(voices)[0];
+    return voices.find((v) => v.name === want) ?? rankEnglishVoices(voices)[0];
   }, [voices, preferredVoice]);
 
-  /** 上一次朗读挂的看门狗和监听器，换一句要先拆干净 */
   const cleanupRef = useRef<(() => void) | null>(null);
-
+  const pendingRef = useRef<string | null>(null);
   const stop = useCallback(() => {
+    // 只停止自己拥有的播放。无关词卡卸载不应暂停别的按钮正在等待的音频。
     cleanupRef.current?.();
-    cleanupRef.current = null;
-    const a = getAudio();
-    if (a) {
-      a.pause();
-      // src 留着不清：清了会中断下载，服务端那次合成就白花了
-      a.currentTime = 0;
-    }
-    if (supported) window.speechSynthesis.cancel();
-    setSpeaking(false);
-    // 手动停下时「生成中」提示也要撤 —— 否则用户按了暂停，tip 还挂着
-    setSynthesizing(false);
-  }, [supported]);
+    setSpeechError(null);
+  }, []);
 
   const speak = useCallback(
-    // voice 用于设置页试听某个具体嗓音，其余场景交给 pickVoice
-    (
-      text: string,
-      opts?: {
-        rate?: number;
-        /** 在当前语速档位上再放慢一档，用于「慢速朗读」按钮 */
-        slow?: boolean;
-        onEnd?: () => void;
-        voice?: SpeechSynthesisVoice;
-        /**
-         * 音高。1 是原样。给听力对话区分说话人用 ——
-         * 系统里英文语音包只有一个的时候，只能靠这个把两个人分开。
-         */
-        pitch?: number;
-        /**
-         * 指定服务端音色 id，盖过用户的偏好。给听力对话一人一个嗓音用。
-         *
-         * 和 voice/pitch 互斥：那两个是浏览器语音包那条路的参数。传了这个就说明
-         * 调用方要的是服务端音色，所以下面的 canServer 不再因为"有 voice"而否决。
-         * （2026-09-09 前叫 kokoroVoice；自建 Kokoro 下线、服务端朗读只剩
-         * MiMo 之后改名，语义没变。）
-         */
-        serverVoiceId?: string;
-        /**
-         * 只用在线 TTS，永不退回浏览器语音包（听力/阅读专用，2026-08-28）。
-         *
-         * 这两个环节是「听」本身，系统语音包读英文发闷，退过去等于把这一环
-         * 的价值抹掉 —— 用户宁可等两三秒真嗓音。所以：
-         * - 没有预生成就现场发在线请求，等着（不设兜底超时，只有硬上限）；
-         * - 等待期间 synthesizing 为 true，调用方据此显示「语音生成中…」；
-         * - 熔断也不拦（没有退路，拦了就是彻底没声）；
-         * - 真失败了通过 speechError 报出来，不静默。
-         */
-        onlineOnly?: boolean;
-      },
-    ) => {
-      const body = text.trim();
+    (text: string, opts?: {
+      rate?: number;
+      slow?: boolean;
+      onEnd?: () => void;
+      voice?: SpeechSynthesisVoice;
+      pitch?: number;
+      serverVoiceId?: string;
+      /** 听力/阅读只用在线音色；失败必须报错，不能跳过没读完的块。 */
+      onlineOnly?: boolean;
+    }) => {
+      const body = text.replace(/\s+/g, ' ').trim();
       if (!body) return;
+      const paceKey = paceRef.current;
+      const serverVoice = opts?.serverVoiceId ??
+        preferredMimoVoiceId(preferredVoice) ??
+        preferredMimoVoiceId(voiceRef.current) ?? DEFAULT_SERVER_VOICE;
+      const requestKey = JSON.stringify([
+        body, serverVoice, paceKey, opts?.slow, opts?.rate, opts?.pitch,
+        opts?.voice?.voiceURI, opts?.voice?.name, opts?.onlineOnly,
+      ]);
+      // React 还没来得及刷新 disabled 时，同一句的第二次点击也不重启下载。
+      if (pendingRef.current === requestKey) return;
       stop();
+      activePlayback?.();
 
-      /** 两条路只能有一条出声、onEnd 只能触发一次 */
+      const audio = getAudio();
       let done = false;
+      let timer = 0;
+      let utterance: SpeechSynthesisUtterance | null = null;
+      let detachAudio = () => {};
       const finish = (fireEnd: boolean) => {
         if (done) return;
+        // 先失效，再 pause/cancel：旧 play() 的 AbortError 会在微任务里迟到。
         done = true;
+        window.clearTimeout(timer);
+        detachAudio();
+        if (utterance) {
+          utterance.onstart = utterance.onend = utterance.onerror = null;
+          window.speechSynthesis.cancel();
+        }
+        if (activePlayback === cancel) {
+          activePlayback = null;
+          audio?.pause();
+        }
+        if (cleanupRef.current === cancel) cleanupRef.current = null;
+        pendingRef.current = null;
         setSpeaking(false);
         setSynthesizing(false);
         if (fireEnd) opts?.onEnd?.();
       };
+      const cancel = () => finish(false);
+      cleanupRef.current = cancel;
+      activePlayback = cancel;
+      setSpeaking(true);
+      const fail = (message: string) => {
+        if (done) return;
+        setSpeechError(message);
+        finish(false);
+      };
 
-      /** 浏览器语音包那条路。服务端不可用、超时、或者调用点要求了音高时走这里。
-       *  它永远是这次朗读的最后一程（见 fallbackFrom —— 兜底后面不会再有别的腿），
-       *  所以读完照常 finish/onEnd，驱动听力的逐句连播链。
-       */
       const speakLocal = (localText: string) => {
-        if (!localText.trim()) {
-          finish(false);
+        if (done) return;
+        pendingRef.current = null;
+        setSynthesizing(false);
+        if (!localSupported) {
+          fail('语音暂时无法播放，请稍后重试或换用支持语音的浏览器');
           return;
         }
-        if (!supported) {
-          finish(false);
-          return;
-        }
-        window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(localText);
+        utterance = u;
         const v = opts?.voice ?? pickVoice();
         if (v) u.voice = v;
         u.lang = v?.lang ?? 'en-US';
         if (opts?.pitch !== undefined) u.pitch = Math.min(2, Math.max(0, opts.pitch));
-        // slow 做成相对的：把「慢速」写死成 0.7 的话，用户已经选了慢档时
-        // 这个按钮就没有区分度了，选了快档时又会一下掉两档。
-        const base = pace(paceRef.current).webSpeechRate;
+        const base = pace(paceKey).webSpeechRate;
         u.rate = opts?.rate ?? (opts?.slow ? Math.max(0.5, base - 0.22) : base);
-        u.onstart = () => setSpeaking(true);
         u.onend = () => finish(true);
-        u.onerror = () => finish(false);
-        window.speechSynthesis.speak(u);
+        u.onerror = () => fail('浏览器未能播放语音，请重试或在设置中更换音色');
+        try {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(u);
+        } catch {
+          fail('浏览器未能播放语音，请重试或在设置中更换音色');
+        }
       };
 
-      /*
-       * 什么时候能走服务端音色：
-       * - 用户在设置里选了在线 MiMo 音色（'mimo:xx'），或调用点指定了服务端音色
-       * - 调用点没有指定具体的 SpeechSynthesisVoice（设置页试听浏览器某个包）
-       * - 没要求 pitch / rate —— 听力对话靠 pitch 区分说话人，服务端改不了音高；
-       *   rate 是调用点写死的倍速，服务端的 speed 走档位，两者语义不一样
-       * - 文本在接口限长内（见 api/speak 的 MAX_TEXT，超限的由切块连播处理）
-       *
-       * 2026-09-09 起服务端朗读只有云端 MiMo 一家（自建 Kokoro 下线），
-       * 主音色本身就是快路，不再需要 alt 救场，服务端也不再收 kokoro 音色。
-       * 偏好只认 'mimo:xx'；浏览器语音包名和老 kokoro:xx 老值一律回落到
-       * 默认 Mia。
-       */
-      const serverVoice =
-        opts?.serverVoiceId ??
-        preferredMimoVoiceId(preferredVoice) ??
-        preferredMimoVoiceId(voiceRef.current) ??
-        DEFAULT_SERVER_VOICE;
-      const audio = getAudio();
-      /*
-       * onlineOnly（听力/阅读）把两条否决条件放开：
-       * - 熔断不拦：没有退路，拦了就是彻底没声音。真挂了让用户看到报错，
-       *   比"静默变成难听的系统语音"更有用（他会知道去反馈）。
-       * - pitch 不拦：听力用 pitch 给浏览器兜底路分说话人，onlineOnly 下
-       *   兜底路根本不会走，pitch 是死参数，不该因此否决服务端音色。
-       */
       const online = Boolean(opts?.onlineOnly);
-      const canServer =
-        Boolean(serverVoice) &&
-        Boolean(audio) &&
-        (online || !serverTtsBlocked()) &&
-        // 显式指定了服务端音色时，voice/pitch 是调用方给浏览器兜底路留的，不算否决条件
+      const canServer = audio && (online || !serverTtsBlocked()) &&
         (online || Boolean(opts?.serverVoiceId) || (!opts?.voice && opts?.pitch === undefined)) &&
-        opts?.rate === undefined &&
-        // 不再以 300 字符一刀切地否决长文本——超限的由 splitSpeechChunks 切块连播。
-        // 只拦确实离谱的超长文（几千字的整篇文档），那种还是留给系统语音包。
-        body.length <= SERVER_TTS_TOTAL_CHARS;
-
-      if (!canServer || !audio || !serverVoice) {
-        /*
-         * onlineOnly 走到这里说明是硬性不可用（浏览器不支持 <audio>、
-         * 文本超过 1200 字符上限、或调用方传了 rate）。不偷偷换成系统语音包，
-         * 把原因说出来 —— 静默降级正是这次要消除的行为。
-         */
+        opts?.rate === undefined && body.length <= SERVER_TTS_TOTAL_CHARS;
+      if (!canServer || !audio) {
         if (online) {
-          setSpeechError(
-            body.length > SERVER_TTS_TOTAL_CHARS ? '这段太长了，没法在线朗读' : '在线语音暂时用不了',
-          );
-          finish(false);
-          return;
+          fail(body.length > SERVER_TTS_TOTAL_CHARS ? '这段太长了，没法在线朗读' : '在线语音暂时用不了');
+        } else {
+          speakLocal(body);
         }
-        speakLocal(body);
         return;
       }
-      if (online) setSpeechError(null);
 
-      /*
-       * 超过接口单次限长的文本（阅读「朗读全文」动辄五六百字符）在前端按句切块、
-       * 一块一块接着播。原来直接判给系统语音包，等于阅读环节永远用不上真嗓音。
-       * 某块超时/出错退回浏览器语音包时，把还没播的块拼成一整段交给系统念完，
-       * onEnd 时序不变；最后一块才失败的话，内容其实已经播完了，不算失败。
-       */
       const chunks = splitSpeechChunks(body);
-
-      /*
-       * 请求 URL：voice 就是最终出声的那个音色（MiMo）。
-       * 服务端只有 MiMo 一家，这条路不带 alt。
-       */
       const qsFor = (t: string) => {
-        const q = new URLSearchParams({ text: t, voice: serverVoice, pace: paceRef.current });
+        const q = new URLSearchParams({ text: t, voice: serverVoice, pace: paceKey });
         if (opts?.slow) q.set('slow', '1');
         return q.toString();
       };
-
-      let index = 0;
-      /** 看门狗跟着当前块走：每块按自己的长度重新武装，开播成功就拆除。
-       *  预算必须逐块算 —— 阅读全文的第一块经常是短标题（700ms 档），
-       *  若整体只用一个预算，后面的长句会被短标题连累成必超时。
+      const playbackRate = playbackRateFor(pace(paceKey).ttsSpeed, Boolean(opts?.slow));
+      /*
+       * 冷启动「先出声」：探过、且明确没缓存 —— 当场用系统语音把这句读完
+       * （仍在同一个手势里，iOS 不会拦），同时排进后台合成。这一次是系统英语，
+       * 下一次点（或下次进这个环节）就是真嗓音。这正是 /api/speak 的 HEAD 注释
+       * 写的那套策略，此前只在设置页用来探「服务端音色能不能用」，按句粒度一直
+       * 没落地 —— 结果是每次冷启动都要干等两三秒真嗓音。
        *
-       *  onlineOnly 下看门狗的含义完全不同：没有兜底路可退，超时不是
-       *  「换系统语音」而是「放弃这一句」。所以给一个宽松的硬上限
-       *  （ONLINE_ONLY_HARD_MS），中间一直显示「语音生成中…」让用户知道
-       *  在等什么 —— 在线合成实测 3s 左右，20s 才判死足够宽容。 */
-      let timer = 0;
-      const armTimer = () => {
-        window.clearTimeout(timer);
-        timer = window.setTimeout(
-          () => fallbackFrom(index),
-          online ? ONLINE_ONLY_HARD_MS : serverTtsBudgetMs(chunks[index]!.length),
-        );
-      };
-
-      /** 已经退回浏览器了，服务端后面再出声就得掐掉，不能两个人一起念 */
+       * 三个前提缺一不可：
+       * · 不是 onlineOnly —— 听力/阅读宁可等，也不拿系统英语换掉训练材料；
+       * · 整句一块 —— 长文是逐块请求，一张预检表对不上；
+       * · 浏览器有系统语音 —— 否则这条路只会更静音，不如老实等服务端。
+       */
+      if (
+        !online &&
+        localSupported &&
+        chunks.length === 1 &&
+        speechCache.get(qsFor(chunks[0]!)) === 'miss'
+      ) {
+        startWarmImmediate([qsFor(chunks[0]!)]);
+        speakLocal(body);
+        return;
+      }
+      let index = 0;
       let fellBack = false;
-      const fallbackFrom = (i: number) => {
-        if (fellBack || done) return;
+      let started = false;
+      let currentUrl = '';
+      /**
+       * 元素是否还指着我们要的那一块。
+       * 不直接比 currentSrc：资源选择完成前它是空串，playing 可能先到，
+       * 那样这一块会被判成过期 → 白白等到硬超时才出声。src 赋值后立即可读，
+       * 两个都看一眼才稳。
+       */
+      const isCurrent = () => audio.currentSrc === currentUrl || audio.src === currentUrl;
+      const fallback = (message: string) => {
+        if (done || fellBack) return;
         fellBack = true;
         window.clearTimeout(timer);
-        /*
-         * onlineOnly：不退回浏览器语音包。已经播过的块不算失败（听力逐句
-         * 连播里前几句可能已经念完了），所以照常 finish(true) 让连播链继续；
-         * 一句都没出声才报错。静音是为了掐掉可能正在解码的旧 buffer。
-         */
+        detachAudio();
+        audio.pause();
         if (online) {
-          audio.muted = true;
-          audio.pause();
-          if (i === 0) setSpeechError('在线语音这次没合成出来，稍等再试');
-          finish(i > 0);
-          return;
-        }
-        // 静音而不是清 src：清了这次下载就断了，浏览器 HTTP 缓存里也留不下东西。
-        // 让它下完，下次点同一句连请求都不用发。
-        // （服务端那边的磁盘缓存不受影响 —— 合成完就写盘了，跟客户端收没收完无关。）
-        audio.muted = true;
-        /*
-         * 兜底文本必须从 i 开始、把超时的那块也带上：单块朗读（听力一句台词、
-         * 一段短文）占了绝大多数，slice(i+1) 在这里拼出空串等于整段静音收场 ——
-         * 上一版就是栽在这。系统语音包把完整内容念出来，onEnd 照常触发，
-         * 听力的连播链（onEnd → step(i+1)）才不会断。
-         */
-        const rest = chunks.slice(i).join(' ');
-        speakLocal(rest);
-      };
-
-      /*
-       * 预热：一块开播时把它后面最多两块插到共享预热队列最前面（限流阀
-       * 同一刻最多 2 个在飞，几十个并发会把上游和磁盘一起打满）。
-       * 听力另有大招：进环节时整段对话就通过 warmServerSpeech 排队热好了。
-       */
-      const startWarm = (i: number) => {
-        if (done || fellBack || serverTtsBlocked()) return;
-        startWarmImmediate(chunks.slice(i + 1, i + 3).map(qsFor));
-      };
-
-      /*
-       * MiMo 的语速在播放端兑现（上游没有语速参数，服务端恒按 1.0 合成）：
-       * 倍速在这里按用户的档位算，公式和路由的 playbackRateFor 是同一条 ——
-       * 两处必须一起改。HTMLAudioElement 拿不到响应头，所以不走服务端下发。
-       *
-       * 服务端朗读只有 MiMo 一家（2026-09-09 起），不用再按 provider 判断。
-       * MIMO_PLAYBACK_BOOST = 1.15 与服务端同步。
-       */
-      const MIMO_BOOST = 1.15;
-      const base = pace(paceRef.current).ttsSpeed;
-      const playbackRate = Math.min(
-        1.6,
-        Math.round((opts?.slow ? Math.max(0.8, base - 0.2) : base) * MIMO_BOOST * 100) / 100,
-      );
-      const applyPlaybackRate = () => {
-        if (playbackRate !== 1) {
-          try {
-            audio.playbackRate = playbackRate;
-          } catch {
-            /* 个别播放器对极端取值会抛，忽略按原速放 */
-          }
+          fail(message);
+        } else {
+          // 仅真实失败/硬超时才降级，保留当前块和所有未读的内容。
+          speakLocal(chunks.slice(index).join(' '));
         }
       };
-
-      /*
-       * 合成要一两秒起步，先把「朗读中」点亮：朗读按钮的脉冲就是
-       * "正在生成语音"的提示，先让用户知道点到了，不是按钮坏了。
-       * 无论最终走服务端还是兜底，finish()/speakLocal 都会把状态收敛回来。
-       */
-      setSpeaking(true);
-      // onlineOnly：先亮「生成中」。命中缓存时几十毫秒后 onPlaying 就把它关掉，
-      // tip 一闪而过；真要现场合成才会停留住几秒 —— 那正是要告诉用户的情况。
-      if (online) setSynthesizing(true);
-
       const onPlaying = () => {
-        if (fellBack) {
-          audio.pause();
-          return;
-        }
-        applyPlaybackRate();
-        window.clearTimeout(timer); // 这块出声了，看门狗完成使命
+        if (done || fellBack || !isCurrent()) return;
+        started = true;
+        audio.playbackRate = playbackRate;
+        window.clearTimeout(timer);
         serverFails = 0;
-        setSynthesizing(false); // 出声了，「生成中」提示该撤了
-        startWarm(index); // 边播边把后面的块备好
+        pendingRef.current = null;
+        setSynthesizing(false);
+        startWarmImmediate(chunks.slice(index + 1, index + 3).map(qsFor));
       };
       const onEnded = () => {
-        if (fellBack) return;
-        const next = index + 1;
-        if (next >= chunks.length) {
-          finish(true);
-          return;
-        }
-        playChunk(next); // 接力下一块（不出手势窗口也能播：元素早已解锁，见 getAudio）
+        if (done || fellBack || !started || !isCurrent()) return;
+        if (index + 1 < chunks.length) playChunk(index + 1);
+        else finish(true);
       };
       const onError = () => {
+        if (done || fellBack || !audio.error) return;
         noteServerFail();
-        fallbackFrom(index);
+        fallback('在线语音加载失败，请稍后重试');
       };
-
       const playChunk = (i: number) => {
+        if (done || fellBack) return;
         index = i;
+        started = false;
+        pendingRef.current = requestKey;
+        setSynthesizing(true);
+        currentUrl = new URL(withBase(`/api/speak?${qsFor(chunks[i]!)}`), window.location.href).href;
+        audio.pause();
         audio.muted = false;
-        audio.playbackRate = 1;
-        // 每块都可能要现场合成（阅读全文切成好几块，后面的块未必预热到了），
-        // 所以逐块亮「生成中」，由 onPlaying 关掉。
-        if (online) setSynthesizing(true);
-        const next = withBase(`/api/speak?${qsFor(chunks[i]!)}`);
-        /*
-         * 2026-08-28 修「点 A 出声是上一句 B」：
-         *
-         * stop() 只 pause() 不清 src（为了不中断上一次的下载），于是换句时
-         * 元素里还挂着旧 src 和旧的已解码数据。如果新旧 URL 恰好相同
-         * （同一句连点两次），赋值 src 不触发重新加载，currentTime 还停在
-         * 上次结束处 → 听起来像"没反应"；而在旧音频尚未 pause 生效时
-         * play() 会先把旧 buffer 放出来 → 听起来像"点 there 念了上一句"。
-         *
-         * 修法：换句前把播放位置归零，src 变了才赋值，没变就重新 load()。
-         * 下载中断的顾虑不成立 —— 服务端合成完就写磁盘缓存了（见 tts/cache.ts
-         * writeCache），客户端收没收完与它无关。
-         */
+        audio.src = currentUrl;
+        audio.load(); // 同一句重播也从头开始，不复用上一句未完成的播放位置。
+        audio.playbackRate = playbackRate;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          noteServerFail();
+          fallback('语音加载超时，请检查网络后重试');
+        }, SERVER_TTS_HARD_MS);
+        const onRejected = (err: unknown) => {
+          if (done || fellBack || index !== i) return;
+          fallback((err as Error)?.name === 'NotAllowedError'
+            ? '浏览器阻止了播放，请允许声音后重试'
+            : '语音未能播放，请稍后重试');
+        };
+        // 必须在点击事件中同步 play，不能 await fetch 后丢失 iOS 用户手势。
         try {
-          audio.pause();
-          audio.currentTime = 0;
-        } catch {
-          /* 某些状态下 currentTime 不可写，忽略 */
+          audio.play().catch(onRejected);
+        } catch (err) {
+          onRejected(err);
         }
-        if (audio.src === next) {
-          audio.load(); // 同一句再点：强制从头取（HTTP 缓存里通常已有）
-        } else {
-          audio.src = next;
-        }
-        armTimer();
-        // 同步 play()：await 之后再 play 就出了 iOS 的手势窗口，会被拦。
-        // 见 api/speak/route.ts 顶部「为什么是 GET 而不是 POST」。
-        audio.play().catch(() => {
-          // 手势窗口没了、或者 src 根本没能开始加载。不计入 serverFails ——
-          // 这是浏览器策略问题，不是服务端不可用。
-          window.clearTimeout(timer);
-          fallbackFrom(i);
-        });
       };
-
       audio.addEventListener('playing', onPlaying);
       audio.addEventListener('ended', onEnded);
       audio.addEventListener('error', onError);
-      cleanupRef.current = () => {
-        window.clearTimeout(timer);
+      detachAudio = () => {
         audio.removeEventListener('playing', onPlaying);
         audio.removeEventListener('ended', onEnded);
         audio.removeEventListener('error', onError);
       };
-
       playChunk(0);
     },
-    [supported, pickVoice, stop, preferredVoice],
+    [localSupported, pickVoice, preferredVoice, stop],
   );
 
   useEffect(() => stop, [stop]);
-
-  /**
-   * synthesizing / speechError 只在 onlineOnly 模式下会变（听力、阅读）：
-   * 前者驱动「语音生成中…」的 tip，后者是合成真失败时给用户的一句话。
-   * 其余调用点不用管，行为和以前完全一样。
-   */
   return { speak, stop, speaking, synthesizing, speechError, supported, voices };
 }
 

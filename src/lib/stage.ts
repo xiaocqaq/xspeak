@@ -123,6 +123,7 @@ async function generateStage(
         prompt: P.warmupPrompt(ctx, aiWords),
         maxTokens: 6000,
         toolName: 'emit_warmup',
+        timeoutMs: STAGE_TIMEOUT_MS,
       });
       break;
     }
@@ -181,6 +182,7 @@ async function generateStage(
           prompt: P.grammarPrompt(ctx, point, await termsOf(session)),
           maxTokens: 6000,
           toolName: 'emit_grammar',
+        timeoutMs: STAGE_TIMEOUT_MS,
         })),
       };
       break;
@@ -192,6 +194,7 @@ async function generateStage(
         prompt: P.listeningPrompt(ctx, await termsOf(session)),
         maxTokens: 6000,
         toolName: 'emit_listening',
+        timeoutMs: STAGE_TIMEOUT_MS,
       });
       break;
 
@@ -201,6 +204,7 @@ async function generateStage(
         prompt: P.readingPrompt(ctx, await termsOf(session)),
         maxTokens: 6000,
         toolName: 'emit_reading',
+        timeoutMs: STAGE_TIMEOUT_MS,
       });
       break;
 
@@ -210,6 +214,7 @@ async function generateStage(
         prompt: P.speakingPrompt(ctx, await termsOf(session)),
         maxTokens: 4000,
         toolName: 'emit_speaking',
+        timeoutMs: STAGE_TIMEOUT_MS,
       });
       break;
   }
@@ -314,9 +319,29 @@ function rowToCard(w: WordRow): EnrichedWord {
  * 这个数曾经是 40 秒，因为那会儿用户在等这次调用 —— 现在不等了（见
  * ENRICH_WAIT_MS），所以给得宽一点：上游 fast 角色慢的时候光说一句 "OK"
  * 都要 25 秒，40 秒对 8 个词的工具调用根本不够，卡这里只会让补充内容一直补不上。
- * 反正没人在等，慢就慢。注意 generateJson 遇到 schema 不匹配会重试一次，最坏两倍。
+ * 反正没人在等，慢就慢。注意 generateJson 遇到 schema 不匹配会重试一次，
+ * 但 90 秒是**两次尝试共用的总预算**（2026-09-10 改的语义，此前是每次各自 90 秒），
+ * 所以最坏也就等 90 秒。
  */
 const ENRICH_TIMEOUT_MS = 90_000;
+
+/**
+ * 生成一个环节的全部 AI 调用共用多少时间（**总预算，不是每次尝试的预算**）。
+ *
+ * 背景：generateJson 遇到 schema 不匹配/被截断会重试一次，而超时预算是按整次
+ * 调用（含重试）算的 —— 所以这个数同时决定了「最坏等多久」和「重试还有多少
+ * 余地」。默认 120 秒时，阅读这种冷启动实测就要一百秒左右，第一次慢一点，
+ * 重试基本没有余量，等于白配了一次重试。
+ *
+ * 这里给 150 秒：一次 100 秒的慢响应之后还有 50 秒重试，最坏等待仍然有界。
+ * 环节内容每天只生成一次、生成完就写库缓存，所以这里的"最坏等待"只影响
+ * 当天第一次进这个环节，不值得为了它牺牲重试成功率。
+ *
+ * 可以按部署环境覆盖：反向代理如果配了更短的读超时（nginx 默认
+ * proxy_read_timeout 是 60 秒），把这里调小到代理超时之下，否则请求会被代理
+ * 掐断 —— 那种情况下用户看到的是网关错误，比 AI 超时更难排查。
+ */
+const STAGE_TIMEOUT_MS = Number(process.env.STAGE_TIMEOUT_MS ?? 150_000);
 
 /**
  * 用户最多为这批补充内容等多久。
