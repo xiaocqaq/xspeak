@@ -3,6 +3,7 @@ import { type AiRole } from './config';
 import { modelForRole } from './selection';
 import {
   getProvider,
+  DEFAULT_TIMEOUT_MS,
   OutputTruncatedError,
   UpstreamTimeoutError,
   type ChatMessage,
@@ -42,13 +43,7 @@ type JsonOpts = {
   toolDescription?: string;
   /** 这一步归哪个角色，决定用哪个模型。默认 content。 */
   role?: AiRole;
-  /**
-   * 单次请求最多等多久，默认 120 秒。
-   *
-   * 用户在等结果的那种调用要自己压一个更短的值：上游延迟波动很大，
-   * 拿默认值等于把一次抽风放大成两分钟白屏。注意这是**单次**的上限，
-   * 下面 schema 不匹配还会重试一次，最坏是两倍。
-   */
+  /** 所有尝试共用的总超时预算，默认 120 秒；schema/截断重试不重置。 */
   timeoutMs?: number;
 };
 
@@ -86,6 +81,8 @@ export async function generateJson<T extends z.ZodType>(
   schema: T,
   opts: JsonOpts,
 ): Promise<z.infer<T>> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   const name = opts.toolName ?? 'emit_result';
   const jsonSchema = z.toJSONSchema(schema, { io: 'input' }) as Record<string, unknown>;
   delete jsonSchema.$schema;
@@ -105,12 +102,13 @@ export async function generateJson<T extends z.ZodType>(
    * 免得把一次真实的 schema 不匹配变成两倍的账单。
    */
   let budget = opts.maxTokens ?? 4096;
-  // 两次机会：救 schema 不匹配，也救预算不够。
-  // 网络和 429/5xx 由下层重试过了，这里再转一圈只会拖长总耗时。
+  // 最多两次机会；重试共用同一个截止时间，不重新发放超时预算。
   for (let attempt = 0; attempt < 2; attempt++) {
     const t0 = Date.now();
     let usage: Usage = {};
     try {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) throw new UpstreamTimeoutError(cfg.model, timeoutMs);
       const raw = await provider.json({
         system: opts.system,
         messages,
@@ -119,7 +117,7 @@ export async function generateJson<T extends z.ZodType>(
         toolDescription: opts.toolDescription ?? '按给定结构返回结果',
         maxTokens: budget,
         temperature: opts.temperature ?? 0.7,
-        timeoutMs: opts.timeoutMs,
+        timeoutMs: remainingMs,
         onUsage: (u) => { usage = u; },
       });
       logCall(name, cfg.role, provider.name, t0, usage);
@@ -241,6 +239,7 @@ export async function generateText(opts: {
   maxTokens?: number;
   temperature?: number;
   role?: AiRole;
+  timeoutMs?: number;
 }): Promise<string> {
   const cfg = await modelForRole(opts.role ?? 'chat');
   const provider = getProvider(cfg);
@@ -252,6 +251,7 @@ export async function generateText(opts: {
       messages: opts.messages,
       maxTokens: opts.maxTokens ?? 1024,
       temperature: opts.temperature ?? 0.8,
+      timeoutMs: opts.timeoutMs,
       onUsage: (u) => { usage = u; },
     });
     logCall('text', cfg.role, provider.name, t0, usage);

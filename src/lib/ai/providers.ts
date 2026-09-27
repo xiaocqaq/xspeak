@@ -79,7 +79,35 @@ type UsageSink = { onUsage?: (u: Usage) => void };
  */
 type Deadline = { timeoutMs?: number };
 
-const DEFAULT_TIMEOUT_MS = 120_000;
+export const DEFAULT_TIMEOUT_MS = 120_000;
+
+/** 超时覆盖整个正文读取；SDK 自带的计时往往只管收到响应头之前。 */
+async function withTimeout<T>(
+  model: string,
+  timeoutMs: number | undefined,
+  call: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const ms = timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  if (ms <= 0) throw new UpstreamTimeoutError(model, ms);
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    const out = await call(ac.signal);
+    ac.signal.throwIfAborted();
+    return out;
+  } catch (err) {
+    if (
+      ac.signal.aborted ||
+      (err as Error)?.name === 'AbortError' ||
+      err instanceof Anthropic.APIConnectionTimeoutError
+    ) {
+      throw new UpstreamTimeoutError(model, ms);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export type JsonRequest = UsageSink & Deadline & {
   system: string;
@@ -131,10 +159,9 @@ function anthropicClient(cfg: ResolvedModel): Anthropic {
     client = new Anthropic({
       apiKey: cfg.apiKey,
       baseURL: cfg.baseURL,
-      // SDK 只重试网络层和 429/5xx。schema 不匹配的重试在 client.ts 里做，
-      // 两层各留一次，最坏 4 次请求 —— 单次生成要 40 秒以上，再多会撞客户端超时。
-      maxRetries: 1,
-      timeout: 120_000,
+      // 不让 SDK 隐式重发可能已被接收的请求；结构化失败由 client.ts 在总预算内重试。
+      maxRetries: 0,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
     anthropicCache.set(cacheKey, client);
   }
@@ -146,21 +173,23 @@ function anthropicProvider(cfg: ResolvedModel): AiProvider {
     name: `anthropic/${cfg.model}`,
 
     async json(req) {
-      const res = await anthropicClient(cfg).messages.create({
-        model: cfg.model,
-        max_tokens: req.maxTokens,
-        temperature: req.temperature,
-        system: req.system,
-        tools: [
-          {
-            name: req.toolName,
-            description: req.toolDescription,
-            input_schema: req.schema as never,
-          },
-        ],
-        tool_choice: { type: 'tool', name: req.toolName },
-        messages: req.messages,
-      }, { timeout: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+      const res = await withTimeout(cfg.model, req.timeoutMs, (signal) =>
+        anthropicClient(cfg).messages.create({
+          model: cfg.model,
+          max_tokens: req.maxTokens,
+          temperature: req.temperature,
+          system: req.system,
+          tools: [
+            {
+              name: req.toolName,
+              description: req.toolDescription,
+              input_schema: req.schema as never,
+            },
+          ],
+          tool_choice: { type: 'tool', name: req.toolName },
+          messages: req.messages,
+        }, { timeout: req.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal }),
+      );
       req.onUsage?.({ input: res.usage?.input_tokens, output: res.usage?.output_tokens });
 
       const block = res.content.find((c) => c.type === 'tool_use');
@@ -175,13 +204,15 @@ function anthropicProvider(cfg: ResolvedModel): AiProvider {
     },
 
     async text(req) {
-      const res = await anthropicClient(cfg).messages.create({
-        model: cfg.model,
-        max_tokens: req.maxTokens,
-        temperature: req.temperature,
-        system: req.system,
-        messages: req.messages,
-      }, { timeout: req.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+      const res = await withTimeout(cfg.model, req.timeoutMs, (signal) =>
+        anthropicClient(cfg).messages.create({
+          model: cfg.model,
+          max_tokens: req.maxTokens,
+          temperature: req.temperature,
+          system: req.system,
+          messages: req.messages,
+        }, { timeout: req.timeoutMs ?? DEFAULT_TIMEOUT_MS, signal }),
+      );
       req.onUsage?.({ input: res.usage?.input_tokens, output: res.usage?.output_tokens });
       return res.content
         .filter((c) => c.type === 'text')
@@ -327,7 +358,9 @@ async function openaiCall(
    */
   for (let attempt = 0; attempt <= QUIRKS.length; attempt++) {
     try {
-      return await openaiFetch(cfg, body, opts.onUsage, Math.max(1, deadline - Date.now()));
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) throw new UpstreamTimeoutError(cfg.model, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      return await openaiFetch(cfg, body, opts.onUsage, remainingMs);
     } catch (err) {
       if (!(err instanceof OpenAiHttpError) || err.status !== 400) throw err;
       const quirk = sniffQuirk(body, err.message);
@@ -350,62 +383,62 @@ async function openaiFetch(
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<OpenAiChoice> {
   const url = openaiUrl(cfg.baseURL);
-  // 生成一段听力材料能跑到一两分钟，默认 fetch 不超时反而更糟：
-  // 连接卡死会一直挂着，所以自己带一个 AbortController。
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({ model: cfg.model, ...payload }),
-      signal: ac.signal,
-    });
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      throw new UpstreamTimeoutError(cfg.model, timeoutMs);
+  return withTimeout(cfg.model, timeoutMs, async (signal) => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({ model: cfg.model, ...payload }),
+        signal,
+      });
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err;
+      /*
+       * fetch 连不上时只给一句 "fetch failed"，那句话到了页面上等于没说。
+       * 连不上几乎总是地址配错或者服务没起，所以把地址带上（只留 origin，
+       * 有的网关把凭证编在路径里）——看见地址人就知道该去查什么。
+       */
+      throw new Error(`连不上 ${origin(url)}：${causeOf(err)}`, { cause: err });
     }
-    /*
-     * fetch 连不上时只给一句 "fetch failed"，那句话到了页面上等于没说。
-     * 连不上几乎总是地址配错或者服务没起，所以把地址带上（只留 origin，
-     * 有的网关把凭证编在路径里）——看见地址人就知道该去查什么。
-     */
-    throw new Error(`连不上 ${origin(url)}：${causeOf(err)}`, { cause: err });
-  } finally {
-    clearTimeout(timer);
-  }
 
-  if (!res.ok) {
-    const raw = await res.text().catch(() => '');
-    throw new OpenAiHttpError(res.status, extractOpenAiError(raw) || `HTTP ${res.status}`);
-  }
+    if (!res.ok) {
+      const raw = await res.text().catch((err) => {
+        if (signal.aborted || (err as Error)?.name === 'AbortError') throw err;
+        return '';
+      });
+      throw new OpenAiHttpError(res.status, extractOpenAiError(raw) || `HTTP ${res.status}`);
+    }
 
-  const data = (await res.json().catch(() => undefined)) as
-    | {
-        choices?: OpenAiChoice[];
-        usage?: {
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          completion_tokens_details?: { reasoning_tokens?: number };
-        };
-      }
-    | undefined;
-  onUsage?.({
-    input: data?.usage?.prompt_tokens,
-    output: data?.usage?.completion_tokens,
-    reasoning: data?.usage?.completion_tokens_details?.reasoning_tokens,
+    const data = (await res.json().catch((err) => {
+      if (signal.aborted || (err as Error)?.name === 'AbortError') throw err;
+      return undefined;
+    })) as
+      | {
+          choices?: OpenAiChoice[];
+          usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            completion_tokens_details?: { reasoning_tokens?: number };
+          };
+        }
+      | undefined;
+    onUsage?.({
+      input: data?.usage?.prompt_tokens,
+      output: data?.usage?.completion_tokens,
+      reasoning: data?.usage?.completion_tokens_details?.reasoning_tokens,
+    });
+    const choice = data?.choices?.[0];
+    if (!choice) {
+      // 兼容实现回一坨别的结构时，说清是"这个端点不像 OpenAI 协议"，
+      // 而不是含糊地说模型没返回内容 —— 前者能指向配置，后者会让人去怀疑模型
+      throw new Error(`${origin(url)} 的回复里没有 choices，可能不是 OpenAI 协议的端点`);
+    }
+    return choice;
   });
-  const choice = data?.choices?.[0];
-  if (!choice) {
-    // 兼容实现回一坨别的结构时，说清是"这个端点不像 OpenAI 协议"，
-    // 而不是含糊地说模型没返回内容 —— 前者能指向配置，后者会让人去怀疑模型
-    throw new Error(`${origin(url)} 的回复里没有 choices，可能不是 OpenAI 协议的端点`);
-  }
-  return choice;
 }
 
 /** 只取 origin，别把可能编在路径里的凭证带进错误信息。 */
@@ -639,55 +672,56 @@ async function responsesCall(
   opts: CallOpts = {},
 ): Promise<{ output: ResponsesOutputItem[]; status: string; incompleteReason?: string }> {
   const url = responsesUrl(cfg.baseURL);
-  const ac = new AbortController();
-  const deadline = Date.now() + (opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const timer = setTimeout(() => ac.abort(), deadline - Date.now());
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({ model: cfg.model, ...payload }),
-      signal: ac.signal,
-    });
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      throw new UpstreamTimeoutError(cfg.model, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  return withTimeout(cfg.model, opts.timeoutMs, async (signal) => {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({ model: cfg.model, ...payload }),
+        signal,
+      });
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') throw err;
+      throw new Error(`连不上 ${origin(url)}：${causeOf(err)}`, { cause: err });
     }
-    throw new Error(`连不上 ${origin(url)}：${causeOf(err)}`, { cause: err });
-  } finally {
-    clearTimeout(timer);
-  }
 
-  if (!res.ok) {
-    const raw = await res.text().catch(() => '');
-    throw new OpenAiHttpError(res.status, extractOpenAiError(raw) || `HTTP ${res.status}`);
-  }
+    if (!res.ok) {
+      const raw = await res.text().catch((err) => {
+        if (signal.aborted || (err as Error)?.name === 'AbortError') throw err;
+        return '';
+      });
+      throw new OpenAiHttpError(res.status, extractOpenAiError(raw) || `HTTP ${res.status}`);
+    }
 
-  const data = (await res.json().catch(() => undefined)) as
-    | {
-        output?: ResponsesOutputItem[];
-        status?: string;
-        incomplete_details?: { reason?: string } | null;
-        usage?: ResponsesUsage;
-      }
-    | undefined;
-  opts.onUsage?.({
-    input: data?.usage?.input_tokens,
-    output: data?.usage?.output_tokens,
-    reasoning: data?.usage?.output_tokens_details?.reasoning_tokens,
+    const data = (await res.json().catch((err) => {
+      if (signal.aborted || (err as Error)?.name === 'AbortError') throw err;
+      return undefined;
+    })) as
+      | {
+          output?: ResponsesOutputItem[];
+          status?: string;
+          incomplete_details?: { reason?: string } | null;
+          usage?: ResponsesUsage;
+        }
+      | undefined;
+    opts.onUsage?.({
+      input: data?.usage?.input_tokens,
+      output: data?.usage?.output_tokens,
+      reasoning: data?.usage?.output_tokens_details?.reasoning_tokens,
+    });
+    if (!data?.output) {
+      throw new Error(`${origin(url)} 的回复里没有 output，可能不是 Responses 协议的端点`);
+    }
+    return {
+      output: data.output,
+      status: data.status ?? 'completed',
+      incompleteReason: responsesIncompleteReason(data as never),
+    };
   });
-  if (!data?.output) {
-    throw new Error(`${origin(url)} 的回复里没有 output，可能不是 Responses 协议的端点`);
-  }
-  return {
-    output: data.output,
-    status: data.status ?? 'completed',
-    incompleteReason: responsesIncompleteReason(data as never),
-  };
 }
 
 function responsesUrl(baseURL: string | undefined): string {
