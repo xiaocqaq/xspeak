@@ -213,7 +213,7 @@ await step('POST /api/voice/preview（音色试听）', async () => {
 });
 
 /*
- * 逐句朗读的服务端音频（自建 Kokoro）。没配 KOKORO_TTS_URL 的部署回 503，
+ * 逐句朗读的服务端音频（云端 MiMo）。没配 MIMO_TTS_KEY 的部署回 503，
  * 那不是失败 —— 前端会退回浏览器语音包。所以 503 记成"跳过"。
  *
  * 这条不走 call()：返回 mp3 而不是 JSON，而且是 GET（见 api/speak 顶部注释）。
@@ -223,11 +223,11 @@ await step('GET /api/speak（本站朗读音色）', async () => {
   // 每次跑用不同文本，才能真的走一遍"未命中→合成→写缓存→命中"，
   // 而不是永远读上一次跑留下的缓存文件
   const text = `smoke test ${Date.now()}`;
-  const q = `text=${encodeURIComponent(text)}&voice=af_heart&pace=normal`;
+  const q = `text=${encodeURIComponent(text)}&voice=Mia&pace=normal`;
 
   const probe = await fetch(`${BASE}/api/speak?${q}`, { headers: ck() });
   if (probe.status === 503) {
-    console.log('\n    没配 KOKORO_TTS_URL，跳过');
+    console.log('\n    没配 MIMO_TTS_KEY，跳过');
     return;
   }
   // body 只能读一次，所以不能把 probe.text() 写进 assert 的消息里
@@ -259,7 +259,7 @@ await step('GET /api/speak（本站朗读音色）', async () => {
   // HEAD 是前端判断"这句能不能立刻用好声音播"的依据：命中 200、未命中 404
   const head = await fetch(`${BASE}/api/speak?${q}`, { method: 'HEAD', headers: ck() });
   assert(head.status === 200, `HEAD 已缓存的文本应该 200，实际 ${head.status}`);
-  const cold = await fetch(`${BASE}/api/speak?text=never-synthesized-${Date.now()}&voice=af_heart`, {
+  const cold = await fetch(`${BASE}/api/speak?text=never-synthesized-${Date.now()}&voice=Mia`, {
     method: 'HEAD',
     headers: ck(),
   });
@@ -268,7 +268,7 @@ await step('GET /api/speak（本站朗读音色）', async () => {
   // 白名单和限长。这个接口拿服务端的 key 去调 TTS，不能让任意字符串透传
   const evil = await fetch(`${BASE}/api/speak?text=hi&voice=evil`, { headers: ck() });
   assert(evil.status === 400, `未知音色应该 400，实际 ${evil.status}`);
-  const long = await fetch(`${BASE}/api/speak?text=${'a'.repeat(400)}&voice=af_heart`, { headers: ck() });
+  const long = await fetch(`${BASE}/api/speak?text=${'a'.repeat(400)}&voice=Mia`, { headers: ck() });
   assert(long.status === 413, `超长文本应该 413，实际 ${long.status}`);
 });
 

@@ -23,7 +23,6 @@ function toProfile(row: Record<string, unknown>, id: number): UserProfile {
     daily_minutes: Number(row.daily_minutes),
     new_words_per_day: Number(row.new_words_per_day),
     voice: (row.voice as string | null) ?? null,
-    voice_offline: (row.voice_offline as string | null) ?? null,
     ai_voice: (row.ai_voice as string | null) ?? null,
     speech_pace: PACES.includes(row.speech_pace as SpeechPace) ? (row.speech_pace as SpeechPace) : 'normal',
     onboarded: Number(row.onboarded),
@@ -95,13 +94,8 @@ export async function POST(req: Request) {
        */
       let tts: Record<string, unknown> | undefined;
       try {
-        /*
-         * 这里、而且只有这里传 'kokoro'（2026-08-28 二次调整）：凌晨没人等，
-         * 自建 Kokoro 一句慢到 13 秒也无所谓，换来的是全站免费。
-         * 所有请求路径上的预合成（进门兜底、开新主题）一律用默认的 'mimo'
-         * 快路 —— 那些场景有用户盯着屏幕，慢就是体验差。见 stage-prefill 头注释。
-         */
-        tts = await prefillUserSpeech(user, s, undefined, 'kokoro');
+        // 2026-09-09 起自建 Kokoro 下线，预合成只有 MiMo 一条路（见 stage-prefill）
+        tts = await prefillUserSpeech(user, s);
       } catch (err) {
         tts = { error: (err as Error).message };
       }

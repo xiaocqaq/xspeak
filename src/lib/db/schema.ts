@@ -48,11 +48,10 @@ DDL.push(
 );
 
 /*
- * 双音色偏好（2026-08-28）：voice = 在线 MiMo 音色（点击时兜底合成），
- * voice_offline = 自建 Kokoro 音色（定时任务预生成的第一梯队，免费）。
- * 播放链路：先查 Kokoro 缓存（预生成几乎必中）→ miss 才现场 MiMo 合成
- * （/api/speak 的 alt 参数）。两列都是 'kokoro:xx' / 'mimo:xx' 前缀格式，
- * NULL = 跟随默认（在线默认 Mia，自建默认 af_heart）。
+ * voice_offline 是 2026-08-28 给「自建 Kokoro 预生成」加的一列（'kokoro:xx'）。
+ * 2026-09-09 自建 Kokoro 整条下线，服务端朗读只走云端 MiMo（users.voice），
+ * 这列不再被读。列本身留着不删 —— 老库升级不该动用户表结构，
+ * 测试站旧构建还在写它，同一个 PG 里别互相绊。
  */
 DDL.push(`ALTER TABLE users ADD COLUMN IF NOT EXISTS voice_offline TEXT`);
 

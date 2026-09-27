@@ -9,7 +9,7 @@ import { BrandMark } from '@/components/brand-mark';
 import { ThemeSwitch } from '@/components/theme-switch';
 import { apiGet } from '@/lib/fetcher';
 import { writePace } from '@/lib/pace-store';
-import { writeOfflineVoice, writeVoice } from '@/lib/voice-store';
+import { writeVoice } from '@/lib/voice-store';
 import { PACE_KEYS } from '@/lib/voice-options';
 import type { SpeechPace } from '@/lib/types';
 import { SidebarDrawer, SidebarFrame } from './sidebar-frame';
@@ -32,9 +32,7 @@ import { SiteNav } from './site-nav';
 function useSyncProfilePrefs() {
   useEffect(() => {
     let alive = true;
-    apiGet<{ user: { voice: string | null; voice_offline: string | null; speech_pace: string | null } }>(
-      '/api/profile',
-    )
+    apiGet<{ user: { voice: string | null; speech_pace: string | null } }>('/api/profile')
       .then((d) => {
         if (!alive || !d?.user) return;
         try {
@@ -44,17 +42,11 @@ function useSyncProfilePrefs() {
             if (!local) writeVoice(d.user.voice);
           } else {
             /*
-             * 库里没有在线偏好，但本地残留着一个「浏览器语音包名」（如 "Karen"）
-             * —— 历史版本设置页写回的默认值，不代表用户刻意选择。清掉，
-             * 让 alt 兜底用默认 MiMo 音色。
+             * 库里没有在线偏好，但本地残留着一个值 —— 浏览器语音包名或已下线的
+             * kokoro: 老值，都不是 MiMo 音色。清掉，
+             * 让朗读回落到默认 MiMo 音色。
              */
-            if (local && !local.startsWith('kokoro:') && !local.startsWith('mimo:')) writeVoice(null);
-          }
-          // 自建偏好（voice_offline）：本地为空时回填，脏值同样清掉
-          const localOff = localStorage.getItem('linxi.ttsVoiceOffline');
-          if (d.user.voice_offline && !localOff) writeOfflineVoice(d.user.voice_offline);
-          if (!d.user.voice_offline && localOff && !localOff.startsWith('kokoro:')) {
-            writeOfflineVoice(null);
+            if (local && !local.startsWith('mimo:')) writeVoice(null);
           }
         } catch {
           /* 隐私模式 localStorage 会抛，忽略 —— 偏好缓存本来就是尽力而为 */

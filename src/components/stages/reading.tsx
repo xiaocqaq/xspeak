@@ -11,11 +11,9 @@ import {
   MaterialButton,
   MaterialSheet,
   Speak,
-  SpeechTip,
   TappableText,
   useMaterialSheet,
 } from './shared';
-import { useTts } from '@/hooks/useSpeech';
 import type { StageProps, ReviewBody } from './types';
 import type { ChoiceQuestionData, ReadingData } from '@/lib/ai/schemas';
 
@@ -38,8 +36,6 @@ export function ReadingStage({ payload, meta, onDone, submitting }: StageProps<P
   const [picked, setPicked] = useState<Record<number, string>>({});
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const sheet = useMaterialSheet();
-  // 只为页面级的 SpeechTip 取状态；真正发起朗读的是各处 Speak（共用同一实例）
-  const { synthesizing, speechError } = useTts();
   const targets = meta.targetWords.map((w) => w.term);
   const questions = payload.questions ?? [];
 
@@ -196,14 +192,6 @@ export function ReadingStage({ payload, meta, onDone, submitting }: StageProps<P
           读完了，去练口语
         </Button>
       </CenterColumn>
-
-      {/*
-        在线合成的状态提示，页面级挂一个（2026-08-29 改）。
-        阅读页有 5 处 Speak（全文 + 3 个释义词 + 答案句），它们共用同一个
-        useTts 实例。提示原来挂在 Speak 内部，于是有 5 个 fixed 容器叠在
-        同一坐标、同时显示同一句话。提示是页面级的，整页一个就够。
-      */}
-      <SpeechTip synthesizing={synthesizing} error={speechError} />
     </>
   );
 }

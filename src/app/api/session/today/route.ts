@@ -26,10 +26,10 @@ export const dynamic = 'force-dynamic';
  * 2026-08-28 多主题/天：GET 和 POST（进入下一个主题）共用这段 ——
  * 新开的主题同样吃兜底，不然点「下一个主题」进去还要现场等 AI。
  *
- * TTS 走 MiMo 快路（prefillUserSpeech 的默认 tier，2026-08-28 二次调整）：
+ * TTS 预合成只有云端 MiMo 一家（2026-09-09 起，自建 Kokoro 整条下线）：
  * 这两条路都是「用户已经在屏幕前了」——「进门发现凌晨 cron 没覆盖到」和
- * 「刚点了下一个主题」。自建 Kokoro 一句要 1.5~13 秒，等它填完缓存用户
- * 早点到那一句了，反而听到系统语音包。凌晨 cron 才用免费的 Kokoro。
+ * 「刚点了下一个主题」。cron（prefresh）与这里的兜底走同一套 MiMo 音色、
+ * 与播放请求共用同一份磁盘缓存，等用户点到那一句基本必中。
  */
 function backfillAfter(user: UserProfile, s: SessionRow) {
   after(async () => {

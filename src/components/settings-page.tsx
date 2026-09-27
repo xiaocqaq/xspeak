@@ -8,10 +8,9 @@ import { withBase } from '@/lib/base-path';
 import { previewServerVoice, serverVoicesAvailable, useTts, voiceTier } from '@/hooks/useSpeech';
 import type { SpeechPace, UserProfile } from '@/lib/types';
 import { AI_VOICES, AI_VOICE_GROUPS, DEFAULT_AI_VOICE, PACES, PACE_KEYS, pace } from '@/lib/voice-options';
-import { kokoroVoicePref } from '@/lib/tts/kokoro-voices';
 import { SERVER_VOICE_GROUPS } from '@/lib/tts/server-voice-list';
 import { writePace } from '@/lib/pace-store';
-import { writeOfflineVoice, writeVoice } from '@/lib/voice-store';
+import { writeVoice } from '@/lib/voice-store';
 import { cn } from '@/lib/cn';
 
 /** 试听用的句子。短、含常见音、能听出语速差别。 */
@@ -29,8 +28,7 @@ const GOALS = [
   { v: 'reading', zh: '阅读' },
   { v: 'work', zh: '工作沟通' },
   { v: 'exam', zh: '考试' },
-  // 「出国旅行」而不是「旅行」：兴趣标签里也有一个「旅行」，同名会让人不知道点哪个（引导页早就这么写了）
-  { v: 'travel', zh: '出国旅行' },
+  { v: 'travel', zh: '旅行' },
 ] as const;
 
 const INTERESTS = ['科技', '游戏', '电影美剧', '音乐', '旅行', '美食', '运动', '编程', '职场', '新闻', '动物', '心理'];
@@ -53,14 +51,14 @@ export function SettingsPage() {
   const [savingVoice, setSavingVoice] = useState<string | null>(null);
   /**
    * 逐句朗读那张卡的试听状态。和上面 AI 音色的 previewing 分开：
-   * 两张卡的 id 空间不同（kokoro 的 af_heart vs 上游的 zhixingjiejie），
+   * 两张卡的 id 空间不同（mimo 的 Mia vs 上游的 zhixingjiejie），
    * 共用一个锁会出现「点了这边、那边转圈」。
    */
   const [ttsPreviewing, setTtsPreviewing] = useState<string | null>(null);
   const [ttsError, setTtsError] = useState<string | null>(null);
   /**
    * 服务端音色可不可用。先当不可用，探到了再画那半张卡 ——
-   * 反过来会让没配 KOKORO_TTS_URL 的部署闪一下一排点了没反应的音色。
+   * 反过来会让没配 MIMO_TTS_KEY 的部署闪一下一排点了没反应的音色。
    */
   const [serverTts, setServerTts] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -74,7 +72,6 @@ export function SettingsPage() {
         // 数据库是真值，进页面就把本地缓存对齐一次（换设备后第一次打开会用到）
         writePace(d.user.speech_pace);
         writeVoice(d.user.voice);
-        writeOfflineVoice(d.user.voice_offline);
       })
       .catch((e) => setError(e.message));
   };
@@ -102,7 +99,6 @@ export function SettingsPage() {
     if (p.speech_pace) writePace(p.speech_pace);
     // 音色比语速多一层：null 是"跟随系统默认"，是个有效选择，不能被真值判断吃掉
     if (p.voice !== undefined) writeVoice(p.voice);
-    if (p.voice_offline !== undefined) writeOfflineVoice(p.voice_offline);
     setUser((u) => (u ? { ...u, ...p } : u));
   };
 
@@ -151,7 +147,6 @@ export function SettingsPage() {
         dailyMinutes: user.daily_minutes,
         newWordsPerDay: user.new_words_per_day,
         voice: user.voice,
-        voiceOffline: user.voice_offline,
         aiVoice: user.ai_voice,
         speechPace: user.speech_pace,
       });
@@ -198,8 +193,8 @@ export function SettingsPage() {
    */
   const lowTierOnly = enVoices.length > 0 && enVoices.every((v) => voiceTier(v).tier < 4);
 
-  /** 试听本站音色。不设超时兜底，所以要自己转圈，见 previewServerVoice。 */
-  const previewKokoro = async (voiceId: string) => {
+  /** 试听本站音色（MiMo）。不设超时兜底，所以要自己转圈，见 previewServerVoice。 */
+  const previewTts = async (voiceId: string) => {
     if (ttsPreviewing) return;
     setTtsPreviewing(voiceId);
     setTtsError(null);
@@ -327,7 +322,7 @@ export function SettingsPage() {
         </div>
         <p className="mt-1.5 text-xs leading-relaxed dim">
           点单词、例句旁边的喇叭时用的声音，和打电话那套是两回事。
-          {serverTts && '点朗读时用的是「在线音色」，云端秒级出声。「自建音色」只用在后台的免费预生成上，选它是给那一轮定调子，不影响你点朗读听到的声音。'}
+          {serverTts && '下面这些是云端在线音色（MiMo），点朗读即点即响，慢速照常可用。'}
           {'「系统语音包」用你设备自带的，离线可用。'}
         </p>
 
@@ -335,43 +330,16 @@ export function SettingsPage() {
           <div className="mt-3 space-y-3">
             {ttsError && <p className="text-xs text-[var(--danger)]">{ttsError}</p>}
             {SERVER_VOICE_GROUPS.map((g) => {
-              /*
-               * 两列偏好各存一家（2026-08-28 二次调整后的职责）：
-               * - MiMo 组 → users.voice：**点朗读时真正出声的音色**。
-               *   没选过时高亮默认 Mia。
-               * - Kokoro 组 → users.voice_offline：只影响凌晨 4 点那轮免费
-               *   预生成用哪个嗓音。没选过时高亮默认 af_heart。
-               * 标签按这个说，别再写「主力/兜底」—— 那是上一版的语义。
-               */
-              const isMimoGroup = g.key === 'mimo';
-              const pref = user.voice_offline ?? kokoroVoicePref('af_heart');
-              const active = (id: string) =>
-                isMimoGroup
-                  ? (user.voice ?? `mimo:${'Mia'}`) === `mimo:${id}`
-                  : pref === kokoroVoicePref(id);
-              const onPick = (id: string) =>
-                isMimoGroup
-                  ? patch({ voice: `mimo:${id}` })
-                  : patch({ voice_offline: kokoroVoicePref(id) });
+              // 2026-09-09 起只有 MiMo 一组，全存 users.voice（点朗读时出声的音色）。
+              // 没选过时高亮默认 Mia。老值 'kokoro:xx' 不算选中，落回默认。
+              const pref = user.voice ?? 'mimo:Mia';
+              const active = (id: string) => pref === `mimo:${id}`;
+              const onPick = (id: string) => patch({ voice: `mimo:${id}` });
               return (
                 <div key={g.key}>
                   <p className="mb-1.5 text-[11px] dim">
-                    {g.zh}
-                    {isMimoGroup ? '（点朗读用这个）' : '（仅后台预生成）'}
+                    {g.zh}（点朗读用这个）
                   </p>
-                  {/*
-                    自建音色组下面挂一句说明（2026-08-29 加）。
-                    分组标签只写「仅后台预生成」还不够 —— 用户点了一个自建音色、
-                    看到它高亮，会合理地以为点朗读就会用它。实际上点朗读固定走
-                    在线音色，这一列只决定凌晨那轮免费预生成的嗓音。
-                    不说清楚就会变成「我选了贝拉却一直听到米娅」（生产实锤）。
-                  */}
-                  {!isMimoGroup && (
-                    <p className="mb-1.5 text-[11px] leading-relaxed text-warm-700 dark:text-warm-200">
-                      选这里的音色不影响点朗读 —— 点朗读一律用上面的在线音色（云端秒级出声）。
-                      这一组只决定凌晨免费预生成那一轮用哪个嗓音。
-                    </p>
-                  )}
                   <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                     {g.voices.map((v) => (
                       <VoiceCell
@@ -382,7 +350,7 @@ export function SettingsPage() {
                         loading={ttsPreviewing === v.id}
                         disabled={Boolean(ttsPreviewing)}
                         onPick={() => onPick(v.id)}
-                        onPlay={() => void previewKokoro(v.id)}
+                        onPlay={() => void previewTts(v.id)}
                       />
                     ))}
                   </div>
@@ -1009,12 +977,6 @@ function VoiceCell({
         type="button"
         onClick={onPick}
         aria-pressed={active}
-        /*
-         * 显式给读屏一个带停顿的名字（2026-08-29 加）。
-         * 视觉上名字和说明是分两行的，但读屏念的是 textContent —— 会连成
-         * 「米娅清亮女声，念课文干脆」。加个破折号把两段隔开。
-         */
-        aria-label={name ? (note ? `${name} —— ${note}` : name) : '自动挑选'}
         className="min-w-0 flex-1 text-left"
       >
         <span className="flex items-center gap-1 text-sm font-medium text-[var(--text-title)]">

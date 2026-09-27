@@ -1,31 +1,25 @@
 /**
- * 小米 MiMo TTS（mimo-v2.5-tts）的服务端客户端。
+ * 小米 MiMo TTS（mimo-v2.5-tts）的服务端客户端 —— 逐句朗读的唯一在线上游。
  *
- * ── 和 Kokoro 那条路的接口形态完全不同 ──
+ * 2026-09-09 起，自建 Kokoro 整条下线，服务端朗读只剩 MiMo 这一家：
+ * 云端推理、不吃本机 CPU，短句约 1.7s、长句约 3.3s（2026-08-27 实测）。
  *
- * Kokoro 是 OpenAI /v1/audio/speech：POST 进去文本，回来的是二进制音频流。
+ * ── 接口形态 ──
+ *
  * MiMo 走的是 chat/completions 形态：要合成的文本放在 role=assistant 的消息里，
  * （可选的）朗读风格指令放在 role=user 的消息里，音频以 base64 回在
  * choices[0].message.audio.data。2026-08-27 实测：assistant 消息单独就能合成，
  * user 消息可省 —— 但带上朗读者指令能让长句的停顿更自然，留着。
  *
- * ── 实测数字（2026-08-27，和 Kokoro 同一台客户机）──
- *
- *   短句（57 字符）   1.7s   ← Kokoro 同长度 3.3s
- *   长句（189 字符）  3.3s   ← Kokoro 同长度 13.4s
- *
- * MiMo 是云端推理，不吃本机 CPU，所以连播预取可以放开一点（见 useSpeech
- * 的 SEQUENCE_PREFETCH，那条注释里「服务端串行」的顾虑只适用于 Kokoro）。
- *
  * ── 为什么没有语速参数 ──
  *
  * audio{} 里只有 format / voice / optimize_text_preview，没有 speed。
- * 语速改由前端播放倍速实现：路由对 MiMo 音色把速度归一到 1.0 再算缓存键
- * （见 server-voices.ts 的 synthSpeed），客户端按用户的语速档位设
- * audio.playbackRate。慢速朗读按钮因此照样有效，且同一份音频按倍速复用。
+ * 语速改由前端播放倍速实现：服务端恒按 1.0 合成（缓存键也按 1.0 算，
+ * 见 server-voices.ts），客户端按用户的语速档位设 audio.playbackRate。
+ * 慢速朗读按钮因此照样有效，且同一份音频按倍速复用。
  */
 
-import { KokoroError, cacheKey, readCache, writeCache } from './kokoro';
+import { TtsError, cacheKey, readCache, writeCache } from './cache';
 
 export type MimoConfig = {
   enabled: boolean;
@@ -38,7 +32,7 @@ export type MimoConfig = {
 };
 
 /**
- * 每次调用重读 env，和 kokoroConfig() 同一个路子：改完 .env.local 重启生效。
+ * 每次调用重读 env，改完 .env.local 重启进程就生效，不用管模块加载顺序。
  */
 export function mimoConfig(): MimoConfig {
   const baseUrl = (process.env.MIMO_TTS_URL ?? 'https://api.xiaomimimo.com/v1')
@@ -65,15 +59,15 @@ const READ_INSTRUCTION =
 /**
  * 调 MiMo 合成一段 mp3。
  *
- * 错误一律包成 KokoroError（名字历史遗留，语义就是「服务端 TTS 出错」），
- * 路由那边已经会按 status 把它变成对应的 HTTP 响应，不必再写一套分支。
+ * 错误一律包成 TtsError（见 tts/cache.ts），路由那边已经会按 status
+ * 把它变成对应的 HTTP 响应，不必再写一套分支。
  */
 export async function mimoSynthesize(
   text: string,
   voice: string,
   cfg = mimoConfig(),
 ): Promise<Buffer> {
-  if (!cfg.enabled) throw new KokoroError('mimo tts not configured', 503);
+  if (!cfg.enabled) throw new TtsError('mimo tts not configured', 503);
 
   let res: Response;
   try {
@@ -95,16 +89,15 @@ export async function mimoSynthesize(
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new KokoroError(`mimo tts request failed: ${msg}`, 502);
+    throw new TtsError(`mimo tts request failed: ${msg}`, 502);
   }
 
   if (!res.ok) {
     // 上游的错误体是 {error:{code,message}}，带出来方便排查（比如音色拼错）
     const detail = await res.text().catch(() => '');
-    throw new KokoroError(
-      `mimo tts ${res.status}: ${detail.slice(0, 200) || 'no detail'}`,
-      res.status === 401 || res.status === 403 ? 502 : 502,
-    );
+    // 401/403（key 失效、没额度）和 5xx 对前端一样：都是「服务端音色用不了」，
+    // 统一 502，让上层退回浏览器语音包而不是当成参数错重试
+    throw new TtsError(`mimo tts ${res.status}: ${detail.slice(0, 200) || 'no detail'}`, 502);
   }
 
   let data: string | undefined;
@@ -114,15 +107,15 @@ export async function mimoSynthesize(
     };
     data = json.choices?.[0]?.message?.audio?.data;
   } catch {
-    throw new KokoroError('mimo tts returned non-JSON response', 502);
+    throw new TtsError('mimo tts returned non-JSON response', 502);
   }
-  if (!data) throw new KokoroError('mimo tts returned no audio', 502);
+  if (!data) throw new TtsError('mimo tts returned no audio', 502);
 
   const audio = Buffer.from(data, 'base64');
   // 正经一个词的 mp3 也有几 KB；太小说明上游给了空壳（和 Kokoro 那个
   // 44 字节 ID3 的毛病一个性质），宁可报错让上层走兜底，也别放一段静音
   if (audio.length < 1000) {
-    throw new KokoroError(`mimo tts returned tiny audio (${audio.length}B)`, 502);
+    throw new TtsError(`mimo tts returned tiny audio (${audio.length}B)`, 502);
   }
   return audio;
 }
