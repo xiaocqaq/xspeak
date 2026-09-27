@@ -290,14 +290,18 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
       }
     >
       {/*
-        题号原来单独占一行（21px）。它和卡片里第一行说的是同一件事，
-        合并之后窄屏省下这 21px，宽屏也不受影响 —— 内容和原来完全一致。
+        题号单独成行。
+
+        这里以前还摆着 payload.intro_zh —— AI 写的一整段「今天为什么这么安排」。
+        删了：答题页的唯一任务是答题，三行教学设计说明摆在题目上方只会遮住主体，
+        而且没人会读它。主题信息在 runner 顶部已经有了。
       */}
+      <p className="en mb-3 text-[13px] font-medium tabular-nums dim">
+        {idx + 1} / {total}
+        {!isCloze && <span className="ml-2 dim">释义</span>}
+      </p>
+
       <Card>
-        <p className="en mb-3 text-[13px] font-medium tabular-nums dim">
-          {idx + 1} / {total}
-          {!isCloze && <span className="ml-2 dim">释义</span>}
-        </p>
         {isCloze ? (
           <>
             {/*
