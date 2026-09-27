@@ -867,3 +867,54 @@ export function DoneBanner({ text, onNext }: { text: string; onNext: () => void 
     </div>
   );
 }
+
+/**
+ * 环节底部那条操作条。
+ *
+ * 2026-09-27：手机上「按钮被藏起来了」。实测 402×874（iPhone 16 Pro）时，
+ * 光顶部固定开销就吃掉 188px —— 顶栏 56 + 上下两道 24 的留白 + 环节标题 47
+ * + 独立题号行 21 + 卡片内边距。卡片里再放题干和讲解，主操作按钮就落到了
+ * 802px 往下，而 Safari 去掉地址栏后可视高度只有 ~780px，等于每次都要先滚一下
+ * 才够得着「记得 / 忘了」。
+ *
+ * 新词环节是唯一没这个毛病的：它把操作按钮钉在视口底部（max-xl:fixed）。
+ * 这里就是把那套已经验证过的写法抽出来，其余环节共用 —— 不是新发明一套样式。
+ *
+ * 只在 xl 以下生效：宽屏是两列布局，页面基本不滚，钉住只会凭空多一条分隔线。
+ * 所以全部用 max-xl: 单向加，不做覆盖。调用方记得给内容补上等高的下内边距
+ * （见 MOBILE_ACTION_BAR_PAD），否则最后一屏内容会被这条压住。
+ *
+ * pb 带 safe-area：iPhone 底部那根横条会压住按钮下沿。
+ */
+export function MobileActionBar({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'max-xl:fixed max-xl:inset-x-0 max-xl:bottom-0 max-xl:z-20',
+        'max-xl:border-t max-xl:border-[var(--hairline)] max-xl:bg-[var(--bg)]',
+        'max-xl:px-4 max-xl:pt-3 sm:max-xl:px-6',
+        'max-xl:pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+        // 宽屏有常驻侧栏，窄屏要避开抽屉把手那一条
+        'lg:max-xl:pl-[calc(var(--sidebar-w)+1.5rem)]',
+        className,
+      )}
+    >
+      <div className="mx-auto w-full max-w-[36rem]">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * 给内容补的底部留白，高度对齐 MobileActionBar。
+ *
+ * 单独导出一个常量而不是让每个调用方各写一遍：写错一两像素，按钮就会压住
+ * 最后一行字，而这种错在宽屏上完全看不出来（那条根本不生成）。
+ */
+export const MOBILE_ACTION_BAR_PAD =
+  'max-xl:pb-[calc(6rem+env(safe-area-inset-bottom))]';

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Phone, Target } from 'lucide-react';
 import { Badge, Button, Card } from '@/components/ui';
-import { ColumnLabel, Speak, Split, StageIntro, StickyColumn } from './shared';
+import { ColumnLabel, MobileActionBar, MOBILE_ACTION_BAR_PAD, Speak, Split, StageIntro, StickyColumn } from './shared';
 import { CallSheet } from '@/components/call-sheet';
 import { VoiceChatLauncher } from '@/components/voice-chat-launcher';
 import { ShadowCard } from '@/components/shadow-card';
@@ -82,6 +82,8 @@ export function SpeakingStage({ payload, meta, onDone, submitting }: StageProps<
         右边聊，说不出来抬眼就能抄一句，不用切回去。
       */}
       <Split
+        ratio="wide-main"
+        className={MOBILE_ACTION_BAR_PAD}
         aside={
           <StickyColumn>
             <ColumnLabel>先练顺这些</ColumnLabel>
@@ -179,14 +181,16 @@ export function SpeakingStage({ payload, meta, onDone, submitting }: StageProps<
           口语是今天最后一个环节，所以这个按钮是"收工"，不再是"去写作"。
           没聊过就压成次要样式：真正该点的是上面的开始对话，不能让跳过的按钮更显眼。
         */}
-        <Button
-          className="w-full"
-          variant={turns === 0 ? 'outline' : 'primary'}
-          onClick={finish}
-          loading={submitting}
-        >
-          {turns === 0 ? '跳过对话，完成今天' : `聊了 ${turns} 轮，完成今天`}
-        </Button>
+        <MobileActionBar>
+          <Button
+            className="w-full"
+            variant={turns === 0 ? 'outline' : 'primary'}
+            onClick={finish}
+            loading={submitting}
+          >
+            {turns === 0 ? '跳过对话，完成今天' : `聊了 ${turns} 轮，完成今天`}
+          </Button>
+        </MobileActionBar>
       </Split>
     </div>
   );

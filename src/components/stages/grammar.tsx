@@ -10,6 +10,8 @@ import {
   Explain,
   MaterialButton,
   MaterialSheet,
+  MobileActionBar,
+  MOBILE_ACTION_BAR_PAD,
   Speak,
   TappableText,
   useMaterialSheet,
@@ -212,7 +214,8 @@ export function GrammarStage({ payload, onDone, submitting }: StageProps<Payload
     <>
       {materialSheet}
 
-      <CenterColumn>
+      {/* 底部提交按钮钉屏幕，内容补留白 */}
+      <CenterColumn className={MOBILE_ACTION_BAR_PAD}>
         <div className="flex items-center gap-3">
           <Progress value={(idx / exercises.length) * 100} className="flex-1" />
           <span className="text-xs tabular-nums dim">
@@ -274,13 +277,13 @@ export function GrammarStage({ payload, onDone, submitting }: StageProps<Payload
                 </div>
               </Explain>
 
-              {isChoice ? (
-                <Button className="mt-4 w-full" onClick={() => advance()} loading={submitting}>
-                  {idx + 1 < exercises.length ? '下一题' : '做完了'}
-                </Button>
-              ) : (
-                <div className="mt-4">
-                  <p className="mb-2 text-xs dim">对照一下，你写的算对吗？</p>
+              {/* 答题后按钮钉底：原来在流里，41 题刷完滚到底才能点「做完了」 */}
+              <MobileActionBar>
+                {isChoice ? (
+                  <Button className="w-full" onClick={() => advance()} loading={submitting}>
+                    {idx + 1 < exercises.length ? '下一题' : '做完了'}
+                  </Button>
+                ) : (
                   <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" onClick={() => advance(true)} loading={submitting}>
                       写错了
@@ -289,8 +292,8 @@ export function GrammarStage({ payload, onDone, submitting }: StageProps<Payload
                       写对了
                     </Button>
                   </div>
-                </div>
-              )}
+                )}
+              </MobileActionBar>
             </>
           )}
         </Card>

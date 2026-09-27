@@ -10,6 +10,8 @@ import {
   Explain,
   MaterialButton,
   MaterialSheet,
+  MobileActionBar,
+  MOBILE_ACTION_BAR_PAD,
   Speak,
   TappableText,
   useMaterialSheet,
@@ -135,7 +137,7 @@ export function ReadingStage({ payload, meta, onDone, submitting }: StageProps<P
         ) : null}
       </MaterialSheet>
 
-      <CenterColumn>
+      <CenterColumn className={MOBILE_ACTION_BAR_PAD}>
         <div className="flex items-center justify-between gap-3">
           <ColumnLabel>读完回答</ColumnLabel>
           <MaterialButton label="看原文" onClick={sheet.show} />
@@ -188,9 +190,12 @@ export function ReadingStage({ payload, meta, onDone, submitting }: StageProps<P
           );
         })}
 
-        <Button className="w-full" onClick={finish} loading={submitting}>
-          读完了，去练口语
-        </Button>
+        {/* 钉底：滚动到题末才看见按钮太折腾 */}
+        <MobileActionBar>
+          <Button className="w-full" onClick={finish} loading={submitting}>
+            读完了，去练口语
+          </Button>
+        </MobileActionBar>
       </CenterColumn>
     </>
   );

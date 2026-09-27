@@ -148,7 +148,15 @@ export function SessionRunner() {
         onPick={setStage}
       />
 
-      <div className="mx-auto min-w-0 max-w-[36rem] space-y-6 xl:max-w-[76rem]">
+      {/*
+        2026-09-27：手机上的垂直预算是稀缺的。
+        原来这里是 space-y-6（24px）叠 AppShell 的 pt-6（24px），标题占 47px，
+        于是第一张卡片要到 188px 才开始 —— 402×874 的屏上等于 21% 的高度
+        花在了「今天这样走 / 环节名 / 今日主题·约5分钟」这三行上，
+        而底部的主操作按钮就被挤到了折叠线以下。
+        窄屏收紧到 3，标题和副标题也并成一行：信息一个没少，只是不再各占一行。
+      */}
+      <div className="mx-auto min-w-0 max-w-[36rem] space-y-3 xl:max-w-[76rem] xl:space-y-6">
         <header className="flex items-center gap-2">
           {/* 手机上开抽屉；宽屏侧栏已常驻，这个按钮就不需要了 */}
           <button
@@ -164,8 +172,15 @@ export function SessionRunner() {
             <Menu className="size-[15px]" strokeWidth={1.8} aria-hidden />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[22px]">{info.zh}</h1>
-            <p className="mt-0.5 truncate text-xs dim">
+            {/*
+              窄屏一行放下「环节名 · 约 N 分钟」，主题留到宽屏再出。
+              原来两行共 47px，现在一行 29px —— 省下的 18px 直接还给卡片。
+            */}
+            <h1 className="flex min-w-0 items-baseline gap-2 text-[20px] xl:text-[22px]">
+              <span className="truncate">{info.zh}</span>
+              <span className="shrink-0 text-xs font-normal dim xl:hidden">约 {info.minutes} 分钟</span>
+            </h1>
+            <p className="mt-0.5 truncate text-xs dim max-xl:hidden">
               {data?.themeZh ?? '今日主题'} · 约 {info.minutes} 分钟
             </p>
           </div>

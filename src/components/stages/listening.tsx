@@ -10,6 +10,8 @@ import {
   Explain,
   MaterialButton,
   MaterialSheet,
+  MobileActionBar,
+  MOBILE_ACTION_BAR_PAD,
   SpeechTip,
   TappableText,
   useMaterialSheet,
@@ -298,7 +300,7 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
         )}
       </MaterialSheet>
 
-      <CenterColumn>
+      <CenterColumn className={MOBILE_ACTION_BAR_PAD}>
         <div className="flex items-center justify-between gap-3">
           <ColumnLabel>回答问题</ColumnLabel>
           <MaterialButton label="再听一遍" onClick={sheet.show} />
@@ -325,14 +327,17 @@ export function ListeningStage({ payload, onDone, submitting }: StageProps<Liste
           </Card>
         ))}
 
-        <Button
-          className="w-full"
-          onClick={() => onDone(collected)}
-          loading={submitting}
-          disabled={!allAnswered && questions.length > 0}
-        >
-          {allAnswered || questions.length === 0 ? '听懂了，进入阅读' : '把问题答完再继续'}
-        </Button>
+        {/* 提交按钮钉底，不然滚动到页末才看见它 */}
+        <MobileActionBar>
+          <Button
+            className="w-full"
+            onClick={() => onDone(collected)}
+            loading={submitting}
+            disabled={!allAnswered && questions.length > 0}
+          >
+            {allAnswered || questions.length === 0 ? '听懂了，进入阅读' : '把问题答完再继续'}
+          </Button>
+        </MobileActionBar>
       </CenterColumn>
 
       {/*

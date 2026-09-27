@@ -9,7 +9,7 @@ import {
   saveProgress,
   type WarmupProgress,
 } from '@/lib/stage-progress';
-import { Choices, ColumnLabel, Explain, RatingRow, Speak, Split, StageIntro, StickyColumn, TappableText } from './shared';
+import { Choices, ColumnLabel, Explain, RatingRow, Speak, Split, StageIntro, StickyColumn, TappableText, MobileActionBar, MOBILE_ACTION_BAR_PAD } from './shared';
 import { cn } from '@/lib/cn';
 import type { StageProps, ReviewBody } from './types';
 import type { WarmupData } from '@/lib/ai/schemas';
@@ -259,6 +259,8 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
      */
     <Split
       ratio="wide-main"
+      // 底部评分条在窄屏是 fixed 的，脱离文档流，得自己给内容让出这块高度
+      className={MOBILE_ACTION_BAR_PAD}
       aside={
         <StickyColumn>
           <ColumnLabel>
@@ -288,18 +290,14 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
       }
     >
       {/*
-        题号单独成行。
-
-        这里以前还摆着 payload.intro_zh —— AI 写的一整段「今天为什么这么安排」。
-        删了：答题页的唯一任务是答题，三行教学设计说明摆在题目上方只会遮住主体，
-        而且没人会读它。主题信息在 runner 顶部已经有了。
+        题号原来单独占一行（21px）。它和卡片里第一行说的是同一件事，
+        合并之后窄屏省下这 21px，宽屏也不受影响 —— 内容和原来完全一致。
       */}
-      <p className="en text-[13px] font-medium tabular-nums dim">
-        {idx + 1} / {total}
-        {!isCloze && <span className="ml-2 dim">释义</span>}
-      </p>
-
       <Card>
+        <p className="en mb-3 text-[13px] font-medium tabular-nums dim">
+          {idx + 1} / {total}
+          {!isCloze && <span className="ml-2 dim">释义</span>}
+        </p>
         {isCloze ? (
           <>
             {/*
@@ -362,10 +360,17 @@ export function WarmupStage({ payload, meta, onDone, submitting }: StageProps<Wa
               </div>
             </Explain>
 
-            <div className="mt-6">
-              <p className="mb-3 text-[13px] dim">刚才这个词，你记得有多牢？这决定它下次什么时候再来。</p>
+            {/*
+              评分条钉在底部：原来在文档流里，402×874 的屏上题号行到卡片顶
+              就已经到 188px，评分条顶在 802px 干脆滚出可视区。
+              钉到底部后无论滚到哪里，四档按钮永远在手指底下。
+            */}
+            <MobileActionBar>
+              <p className="mb-2 text-[13px] dim max-xl:text-center">
+                刚才这个词，你记得有多牢？这决定它下次什么时候再来。
+              </p>
               <RatingRow onRate={rate} busy={submitting} />
-            </div>
+            </MobileActionBar>
           </>
         )}
       </Card>
