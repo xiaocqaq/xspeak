@@ -76,25 +76,26 @@ function useSyncProfilePrefs() {
  * 完全不要 chrome 的页面（/onboarding）根本不会走到这个组件。
  */
 /**
- * 顶栏中段插槽。
+ * 顶栏插槽（两段）：leading 占全站导航按钮那一格（Logo 左边），center 是 Logo
+ * 右边那段空当。
  *
- * /learn 这类「自带头部」的页面，可以把一小块内容（环节标题 + 切环节 + 换一批）
- * 塞进全站顶栏中段那段空当里 —— 手机上顶栏中间本来就是空的。这样页面里就不用
- * 再单独占一行标题，主内容能整体往上顶。其它页面从不设置，插槽为空，顶栏和以前
- * 一模一样。
+ * /learn 这类「自带头部」的页面把「切环节」按钮放 leading、环节标题 + 换一批放
+ * center —— 手机顶栏的排布就和首页完全一致：最左一个方按钮，右边紧跟 Logo。
+ * 其它页面从不设置，插槽为空，顶栏和以前一模一样。
  *
  * 状态放在 AppShell：顶栏和 children 都在它底下，children（如 SessionRunner）
- * 用 useTopbarSlot 设值、顶栏读值渲染。传进来的 node 要自己 useMemo 稳住引用，
+ * 用 useTopbarSlots 设值、顶栏读值渲染。传进来的 slots 要自己 useMemo 稳住引用，
  * 否则每次渲染都换新对象会把这个 effect 打成循环。
  */
-const TopbarSlotContext = createContext<((node: ReactNode | null) => void) | null>(null);
+type TopbarSlots = { leading?: ReactNode; center?: ReactNode };
+const TopbarSlotContext = createContext<((slots: TopbarSlots) => void) | null>(null);
 
-export function useTopbarSlot(node: ReactNode) {
-  const setNode = useContext(TopbarSlotContext);
+export function useTopbarSlots(slots: TopbarSlots) {
+  const setSlots = useContext(TopbarSlotContext);
   useEffect(() => {
-    setNode?.(node);
-    return () => setNode?.(null);
-  }, [setNode, node]);
+    setSlots?.(slots);
+    return () => setSlots?.({});
+  }, [setSlots, slots]);
 }
 
 export function AppShell({
@@ -107,7 +108,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [topbarSlot, setTopbarSlot] = useState<ReactNode | null>(null);
+  const [topbarSlots, setTopbarSlots] = useState<TopbarSlots>({});
 
   // 换设备/换浏览器时把库里的音色、语速偏好回填到本地（见 useSyncProfilePrefs）
   useSyncProfilePrefs();
@@ -116,7 +117,7 @@ export function AppShell({
   useEffect(() => setDrawerOpen(false), [pathname]);
 
   return (
-    <TopbarSlotContext.Provider value={setTopbarSlot}>
+    <TopbarSlotContext.Provider value={setTopbarSlots}>
       <header
         className={cn(
           'chrome-material fixed inset-x-0 top-0 z-20 flex items-center gap-3',
@@ -138,6 +139,13 @@ export function AppShell({
           </button>
         )}
 
+        {/*
+          leading 插槽：占的正是上面那颗全站导航按钮的位置（/learn 有 ownsSidebar，
+          没有导航按钮，这格空着）。这样 /learn 顶栏最左也是一个方按钮，和首页
+          手机端看起来一模一样。
+        */}
+        {topbarSlots.leading && <div className="shrink-0 lg:hidden">{topbarSlots.leading}</div>}
+
         <Link href="/" className="flex min-w-0 items-center gap-2.5">
           {/*
             标识压在绿底上而不是直接摆在顶栏里：气泡是描边形，
@@ -153,11 +161,11 @@ export function AppShell({
         </Link>
 
         {/*
-          顶栏中段插槽：手机上放页面塞进来的东西（/learn 的环节标题）；为空或宽屏时
+          center 插槽：手机上放页面塞进来的东西（/learn 的环节标题）；为空或宽屏时
           就是把 Logo 和主题开关推到两端的弹性空档，和以前一样。
         */}
         <div className="flex min-w-0 flex-1 items-center">
-          {topbarSlot && <div className="min-w-0 flex-1 lg:hidden">{topbarSlot}</div>}
+          {topbarSlots.center && <div className="min-w-0 flex-1 lg:hidden">{topbarSlots.center}</div>}
         </div>
         <ThemeSwitch />
       </header>

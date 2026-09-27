@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { PanelLeft, PartyPopper, RefreshCw } from 'lucide-react';
 import { Button, Card, ErrorNote } from '@/components/ui';
 import { StageLoading } from './shared';
-import { useTopbarSlot } from '@/components/shell/app-shell';
+import { useTopbarSlots } from '@/components/shell/app-shell';
 import { StageDrawer, StageSidebar } from './stage-nav';
 import { WarmupStage } from './warmup';
 import { NewWordsStage } from './newwords';
@@ -128,28 +128,32 @@ export function SessionRunner() {
   const info = STAGE_META[stage];
 
   /*
-    手机端：把「环节名 · 约 N 分钟」+ 切环节 + 换一批塞进全站顶栏中段那段空当，
-    页面里就不再单独占一行标题，主内容整体上移。宽屏仍用下面 <header> 里的版本
-    （那儿还带今日主题副标题，且顶栏插槽在 lg 以上隐藏）。
-    useMemo 稳住引用，否则每次渲染都换新对象会把 useTopbarSlot 的 effect 打成循环。
+    手机端：顶栏按首页的样子排 —— 最左一格放「切环节」按钮（首页那格是导航按钮，
+    尺寸、描边都对齐），Logo 右边那段空当放环节名和「换一批」。页面里因此不用再
+    单独占一行标题，主内容整体上移。宽屏仍用下面 <header> 里的版本（那儿还带
+    今日主题副标题，且插槽在 lg 以上隐藏）。
+    useMemo 稳住引用，否则每次渲染都换新对象会把 useTopbarSlots 的 effect 打成循环。
     allDone（结束页）时清空插槽，别让顶栏还挂着某个环节名。
   */
-  const topbarSlot = useMemo(
-    () =>
-      allDone ? null : (
+  const topbarSlots = useMemo(() => {
+    if (allDone) return {};
+    return {
+      leading: (
+        <button
+          type="button"
+          onClick={() => setNavOpen(true)}
+          aria-label="切换环节"
+          className={cn(
+            'grid size-8 shrink-0 place-items-center rounded-lg',
+            'border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]',
+            'transition-colors hover:bg-[var(--surface-hover)] hover:text-brand-600',
+          )}
+        >
+          <PanelLeft className="size-[15px]" strokeWidth={1.8} aria-hidden />
+        </button>
+      ),
+      center: (
         <div className="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setNavOpen(true)}
-            aria-label="切换环节"
-            className={cn(
-              'grid size-7 shrink-0 place-items-center rounded-lg',
-              'border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]',
-              'transition-colors hover:bg-[var(--surface-hover)] hover:text-brand-600',
-            )}
-          >
-            <PanelLeft className="size-[15px]" strokeWidth={1.8} aria-hidden />
-          </button>
           <h1 className="flex min-w-0 items-baseline gap-1.5 text-[17px] font-bold text-[var(--text-title)]">
             <span className="truncate">{info.zh}</span>
           </h1>
@@ -170,9 +174,9 @@ export function SessionRunner() {
           )}
         </div>
       ),
-    [allDone, info.zh, stage, loading],
-  );
-  useTopbarSlot(topbarSlot);
+    };
+  }, [allDone, info.zh, stage, loading]);
+  useTopbarSlots(topbarSlots);
 
   if (allDone) return <Finished skipped={allDone} onPick={(s) => { setAllDone(null); setStage(s); }} />;
 
