@@ -911,7 +911,8 @@ export function MobileActionBar({
         'max-xl:fixed max-xl:inset-x-0 max-xl:bottom-0 max-xl:z-20',
         'max-xl:border-t max-xl:border-[var(--hairline)] max-xl:bg-[var(--bg)]',
         'max-xl:px-4 max-xl:pt-3 sm:max-xl:px-6',
-        'max-xl:pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+        // 底边多留一档：按钮从贴边抬起来一点，拇指点着更顺手（用户反馈）。
+        'max-xl:pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
         // 宽屏有常驻侧栏，窄屏要避开抽屉把手那一条
         'lg:max-xl:pl-[calc(var(--sidebar-w)+1.5rem)]',
         className,
@@ -929,4 +930,4 @@ export function MobileActionBar({
  * 最后一行字，而这种错在宽屏上完全看不出来（那条根本不生成）。
  */
 export const MOBILE_ACTION_BAR_PAD =
-  'max-xl:pb-[calc(6rem+env(safe-area-inset-bottom))]';
+  'max-xl:pb-[calc(6.75rem+env(safe-area-inset-bottom))]';

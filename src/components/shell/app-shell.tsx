@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PanelLeft } from 'lucide-react';
@@ -75,6 +75,28 @@ function useSyncProfilePrefs() {
  *
  * 完全不要 chrome 的页面（/onboarding）根本不会走到这个组件。
  */
+/**
+ * 顶栏中段插槽。
+ *
+ * /learn 这类「自带头部」的页面，可以把一小块内容（环节标题 + 切环节 + 换一批）
+ * 塞进全站顶栏中段那段空当里 —— 手机上顶栏中间本来就是空的。这样页面里就不用
+ * 再单独占一行标题，主内容能整体往上顶。其它页面从不设置，插槽为空，顶栏和以前
+ * 一模一样。
+ *
+ * 状态放在 AppShell：顶栏和 children 都在它底下，children（如 SessionRunner）
+ * 用 useTopbarSlot 设值、顶栏读值渲染。传进来的 node 要自己 useMemo 稳住引用，
+ * 否则每次渲染都换新对象会把这个 effect 打成循环。
+ */
+const TopbarSlotContext = createContext<((node: ReactNode | null) => void) | null>(null);
+
+export function useTopbarSlot(node: ReactNode) {
+  const setNode = useContext(TopbarSlotContext);
+  useEffect(() => {
+    setNode?.(node);
+    return () => setNode?.(null);
+  }, [setNode, node]);
+}
+
 export function AppShell({
   children,
   ownsSidebar = false,
@@ -85,6 +107,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [topbarSlot, setTopbarSlot] = useState<ReactNode | null>(null);
 
   // 换设备/换浏览器时把库里的音色、语速偏好回填到本地（见 useSyncProfilePrefs）
   useSyncProfilePrefs();
@@ -93,7 +116,7 @@ export function AppShell({
   useEffect(() => setDrawerOpen(false), [pathname]);
 
   return (
-    <>
+    <TopbarSlotContext.Provider value={setTopbarSlot}>
       <header
         className={cn(
           'chrome-material fixed inset-x-0 top-0 z-20 flex items-center gap-3',
@@ -129,7 +152,13 @@ export function AppShell({
           </span>
         </Link>
 
-        <div className="flex-1" />
+        {/*
+          顶栏中段插槽：手机上放页面塞进来的东西（/learn 的环节标题）；为空或宽屏时
+          就是把 Logo 和主题开关推到两端的弹性空档，和以前一样。
+        */}
+        <div className="flex min-w-0 flex-1 items-center">
+          {topbarSlot && <div className="min-w-0 flex-1 lg:hidden">{topbarSlot}</div>}
+        </div>
         <ThemeSwitch />
       </header>
 
@@ -168,6 +197,6 @@ export function AppShell({
           {children}
         </div>
       </main>
-    </>
+    </TopbarSlotContext.Provider>
   );
 }

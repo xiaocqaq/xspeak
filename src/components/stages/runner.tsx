@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Menu, PartyPopper, RefreshCw } from 'lucide-react';
 import { Button, Card, ErrorNote } from '@/components/ui';
 import { StageLoading } from './shared';
+import { useTopbarSlot } from '@/components/shell/app-shell';
 import { StageDrawer, StageSidebar } from './stage-nav';
 import { WarmupStage } from './warmup';
 import { NewWordsStage } from './newwords';
@@ -124,9 +125,57 @@ export function SessionRunner() {
     }
   };
 
-  if (allDone) return <Finished skipped={allDone} onPick={(s) => { setAllDone(null); setStage(s); }} />;
-
   const info = STAGE_META[stage];
+
+  /*
+    手机端：把「环节名 · 约 N 分钟」+ 切环节 + 换一批塞进全站顶栏中段那段空当，
+    页面里就不再单独占一行标题，主内容整体上移。宽屏仍用下面 <header> 里的版本
+    （那儿还带今日主题副标题，且顶栏插槽在 lg 以上隐藏）。
+    useMemo 稳住引用，否则每次渲染都换新对象会把 useTopbarSlot 的 effect 打成循环。
+    allDone（结束页）时清空插槽，别让顶栏还挂着某个环节名。
+  */
+  const topbarSlot = useMemo(
+    () =>
+      allDone ? null : (
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setNavOpen(true)}
+            aria-label="切换环节"
+            className={cn(
+              'grid size-7 shrink-0 place-items-center rounded-lg',
+              'border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]',
+              'transition-colors hover:bg-[var(--surface-hover)] hover:text-brand-600',
+            )}
+          >
+            <Menu className="size-[15px]" strokeWidth={1.8} aria-hidden />
+          </button>
+          <h1 className="flex min-w-0 items-baseline gap-1.5 text-[17px] font-bold text-[var(--text-title)]">
+            <span className="truncate">{info.zh}</span>
+            <span className="shrink-0 text-[11px] font-normal dim">约 {info.minutes} 分钟</span>
+          </h1>
+          {stage === 'newwords' && (
+            <button
+              type="button"
+              onClick={() => load(stage, true)}
+              disabled={loading}
+              aria-label="换一批词"
+              className={cn(
+                'ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-[var(--text-dim)]',
+                'transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-title)]',
+                'disabled:opacity-40',
+              )}
+            >
+              <RefreshCw className={cn('size-4', loading && 'animate-spin')} aria-hidden />
+            </button>
+          )}
+        </div>
+      ),
+    [allDone, info.zh, info.minutes, stage, loading],
+  );
+  useTopbarSlot(topbarSlot);
+
+  if (allDone) return <Finished skipped={allDone} onPick={(s) => { setAllDone(null); setStage(s); }} />;
 
   return (
     /**
@@ -156,26 +205,14 @@ export function SessionRunner() {
         而底部的主操作按钮就被挤到了折叠线以下。
         窄屏收紧到 3，标题和副标题也并成一行：信息一个没少，只是不再各占一行。
       */}
-      <div className="mx-auto min-w-0 max-w-[36rem] space-y-3 xl:max-w-[76rem] xl:space-y-6">
-        <header className="flex items-center gap-2">
-          {/* 手机上开抽屉；宽屏侧栏已常驻，这个按钮就不需要了 */}
-          <button
-            type="button"
-            onClick={() => setNavOpen(true)}
-            aria-label="切换环节"
-            className={cn(
-              'grid size-8 shrink-0 place-items-center rounded-lg lg:hidden',
-              'border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]',
-              'transition-colors hover:bg-[var(--surface-hover)] hover:text-brand-600',
-            )}
-          >
-            <Menu className="size-[15px]" strokeWidth={1.8} aria-hidden />
-          </button>
+      <div className="mx-auto min-w-0 max-w-[36rem] xl:max-w-[76rem]">
+        {/*
+          手机端标题已挪到全站顶栏（见上面的 useTopbarSlot）—— 省掉页面里单独一行
+          标题，主内容整体上移。这个 header 只在 lg 以上出：那里侧栏常驻、也放得下
+          今日主题副标题；lg 以下顶栏插槽接手。
+        */}
+        <header className="mb-3 hidden items-center gap-2 lg:flex xl:mb-6">
           <div className="min-w-0 flex-1">
-            {/*
-              窄屏一行放下「环节名 · 约 N 分钟」，主题留到宽屏再出。
-              原来两行共 47px，现在一行 29px —— 省下的 18px 直接还给卡片。
-            */}
             <h1 className="flex min-w-0 items-baseline gap-2 text-[20px] xl:text-[22px]">
               <span className="truncate">{info.zh}</span>
               <span className="shrink-0 text-xs font-normal dim xl:hidden">约 {info.minutes} 分钟</span>
@@ -185,10 +222,8 @@ export function SessionRunner() {
             </p>
           </div>
           {/*
-            重新生成只留给新词环节。它换词是从词典按 CEFR 等级+词频取的，零 token、
-            几十毫秒；其余环节点一下就是重新调一次 AI，十几秒加几千 token ——
-            放个随手可点的图标在标题旁边，只会让人无意中反复花钱。
-            那些环节要换内容，明天自然是新的；真出错了 ErrorNote 上有重试。
+            重新生成只留给新词环节：换词是从词典按 CEFR 等级+词频取的，零 token；
+            其余环节点一下就是重调一次 AI。这颗只在宽屏 header 里，手机上它在顶栏插槽里。
           */}
           {stage === 'newwords' && (
             <button
@@ -206,29 +241,27 @@ export function SessionRunner() {
             </button>
           )}
         </header>
-        {/*
-          原来这里有一条逐段进度细线。有了侧栅/抽屉后它是重复信息，
-          而且两个地方都能切环节反而让人迟疑该点哪个，所以去掉了。
-        */}
 
-      {error && <ErrorNote message={error} onRetry={() => load(stage)} />}
-      {loading && <StageLoading what={info.zh} />}
+        <div className="space-y-3 xl:space-y-6">
+          {error && <ErrorNote message={error} onRetry={() => load(stage)} />}
+          {loading && <StageLoading what={info.zh} />}
 
-      {data && !loading && (
-        <StageBody
-          /*
-           * 用 data.stage 而不是外层的 stage：
-           * 切环节时 stage 先变，data 还是上一个环节的，用 stage 分派会把
-           * 旧 payload 交给新组件，字段对不上就直接报 undefined.length。
-           * data.stage 是后端返回的、和 payload 同一批的值，两者永远一致。
-           */
-          stage={data.stage}
-          data={data}
-          onDone={onDone}
-          onRegenerate={() => load(stage, true)}
-          submitting={submitting}
-        />
-      )}
+          {data && !loading && (
+            <StageBody
+              /*
+               * 用 data.stage 而不是外层的 stage：
+               * 切环节时 stage 先变，data 还是上一个环节的，用 stage 分派会把
+               * 旧 payload 交给新组件，字段对不上就直接报 undefined.length。
+               * data.stage 是后端返回的、和 payload 同一批的值，两者永远一致。
+               */
+              stage={data.stage}
+              data={data}
+              onDone={onDone}
+              onRegenerate={() => load(stage, true)}
+              submitting={submitting}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
