@@ -25,6 +25,8 @@ npm-debug.log*
 coverage/
 .idea/
 .vscode/
+# Codegraph 本地索引（codegraph init 生成，每台机器重建即可）
+/.codegraph/
 
 # ECDICT 导入缓存（63MB，用 npm run dict:import 重新下载）
 ecdict.csv
