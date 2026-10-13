@@ -61,16 +61,45 @@ export async function POST(req: Request) {
   }
 
   /*
-   * 48 小时内有学习记录的用户：sessions 的 day 是本地日期，最近两天内
-   * 建过/学过 session 的人就是要提前服务的对象。再顺带补上 daily_stats
-   * 里近两天有量的（学了但 session 没落库的边缘情况，正常不会发生，
-   * 查一下不亏）。
+   * 48 小时内有学习动作的用户。
+   *
+   * ── 为什么不能只判「sessions 里有行」──
+   *
+   * 这个任务的循环体第一步就是 getOrCreateToday()，它会往 sessions 插一行
+   * （day = 今天）。插出来的行次日又满足 `s.day >= CURRENT_DATE - 1`，
+   * 于是任务永远命中自己写的行 —— 反馈环，给早就不用的人天天预生成。
+   * 实测 2026-09-28 ~ 10-13：3 个用户连续 16 天零动作，每轮照跑，
+   * 一轮 24 次调用 / 14.6 万 token / 14 次失败重试，全部白花。
+   *
+   * 只认四种「真的发生过的动作」（cron 自己都不写这些字段）：
+   * - stage_index > 0   —— 进过某个环节
+   * - minutes_spent > 0 —— 环节落了计时（completeStage 写的）
+   * - completed_at 非空 —— 走完整轮
+   * - stages_done 非空  —— 完成过至少一个环节
+   *
+   * daily_stats 那支保留：它是纯学习动作的痕迹（bumpDaily 只被答题/复习/
+   * 通话/聊天调用，cron 不写它），能兜住「进程被重启打断、session 没落库」
+   * 的情况。
+   *
+   * 窗口口径：CURRENT_DATE 是数据库会话时区的日期（pool.ts 把连接钉成
+   * UTC），凌晨 4 点跑时它正好等于「北京的今天」（UTC 20:00，日期没跨）。
+   * 所以这个条件实际覆盖最近 24~48 小时的活跃 —— 昨晚学过的用户仍然命中。
    */
   const rows = await all<{ id: number }>(
     `SELECT DISTINCT u.id FROM users u
      WHERE u.onboarded = 1
        AND (
-         EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.day >= CURRENT_DATE - 1)
+         EXISTS (
+           SELECT 1 FROM sessions s
+           WHERE s.user_id = u.id
+             AND s.day >= CURRENT_DATE - 1
+             AND (
+               s.stage_index > 0
+               OR COALESCE(s.minutes_spent, 0) > 0
+               OR s.completed_at IS NOT NULL
+               OR (s.stages_done IS NOT NULL AND s.stages_done::text NOT IN ('null', '[]'))
+             )
+         )
          OR EXISTS (SELECT 1 FROM daily_stats d WHERE d.user_id = u.id AND d.day >= CURRENT_DATE - 1)
        )`,
   );

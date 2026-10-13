@@ -1898,3 +1898,63 @@ curl -s -X POST http://127.0.0.1:19998/_reset   # 清空
 前端是 `onopen` 里立刻发 `start` 的，不按住就整条开场消息丢掉
 （实测不 pause 收到 0 条，pause 收到 1 条）。所以拒绝那条路径是
 `resume()` 之后再 `close(4401)`，`relay.mjs` 里有注释记着。
+
+## 修复：凌晨 4 点预生成的「活跃判据」反馈环（2026-10-13，已发生产）
+
+**现象**：问了「为什么 48 小时内没人用，4 点的定时任务还是触发了」。
+
+**根因**：判据查的是 `sessions` 表里有没有近两天的行，而这个任务的循环体
+第一步 `getOrCreateToday()` **自己就会往 `sessions` 插一行**（day = 今天）。
+插出来的行次日又满足 `s.day >= CURRENT_DATE - 1`，于是任务永远命中自己写的行。
+`daily_stats` 那一支是干净的（`bumpDaily` 只被答题/复习/通话/聊天调用，
+cron 不写它），但判据里 `sessions` 与它并列 —— 一支被污染，整体就失效。
+
+**实测证据**（生产库）：
+
+| 判据来源 | 条数 | 真实来源 |
+|---|---|---|
+| `sessions` | 105 行（8-30 起）| 90% 是 cron 自己写的（创建时刻都落在 04:00–04:17）|
+| `daily_stats` | 19 行 | 全部来自真实学习动作 |
+
+以 `daily_stats` 反推真实活动：user1 最后 8-26、user3 最后 8-28、**user4 最后 10-04**。
+也就是说这三个人已经 15~16 天零动作，但 9-28 ~ 10-13 每轮照跑，一轮
+**24 次调用 / 14.6 万 token（in 26,952 + out 118,994）/ 14 次失败重试**，
+`stage_content` 里堆的内容无人读取，TTS 缓存 113 MB / 3342 个 mp3。
+
+**改法**（`src/app/api/internal/prefresh/route.ts`，一处 SQL）：
+`sessions` 那一支加上「真发生过动作」的过滤 —— 四种字段任一非空，cron 自己
+都不写它们：
+
+```sql
+AND (s.stage_index > 0
+     OR COALESCE(s.minutes_spent, 0) > 0
+     OR s.completed_at IS NOT NULL
+     OR (s.stages_done IS NOT NULL AND s.stages_done::text NOT IN ('null', '[]')))
+```
+
+**窗口口径（别算错）**：`CURRENT_DATE` 是数据库会话时区的日期，而 `pool.ts`
+把连接钉成 `-c timezone=UTC`。凌晨 4 点跑时它等于 UTC 前一天 20:00，正好是
+「北京的今天」——日期没跨，所以条件实际覆盖最近 24~48 小时。昨晚 23:00 学过
+的人在次日 04:00 仍然命中（他的 `day` = 北京今天，而 `CURRENT_DATE - 1` =
+北京昨天，包含今天）。**不要按字面理解成「只回看一天」。**
+
+**验证（三层，全部跑过）**：
+
+1. 端到端：真调 `POST /api/internal/prefresh`（带真 secret）→ `users: 0`，
+   `results: []`（改动前是 3 个用户跑 17 分钟）
+2. 历史回放：把抽出来的 SQL 里的 `CURRENT_DATE` 换成 10-05 → 正确捞到 user4
+   （他 10-04 真的练过，0.8 分钟）；换成 10-06/10-13 → 空
+3. 正向对照：事务内给 user5 插一条 `daily_stats` → 判据选中他；`ROLLBACK` 后
+   不选，库无残留
+
+**顺带查出来、但这次没动的两件事**（免得下次重查）：
+
+- `[prefresh] 预生成请求出错：fetch failed` 是**假警报**：出现在 04:05:01，
+  距 04:00:00 正好 301 秒 = Node 内置 fetch 的 5 分钟 headersTimeout。
+  任务实际跑到 04:17+，是调用方先超时断了，所以日志里永远打不出
+  `X/Y 个用户` 的汇总。跑一轮 ≈ 5.7 分钟/用户。
+- 失败集中在 `senior` 模型：`输出被截断：max_tokens 用光了（6000 tokens）`、
+  `调用 senior 超时（91~101 秒）`；失败后同一环节会再调一次，token 翻倍。
+
+**回滚**：`/opt/xspeak/src/app/api/internal/prefresh/route.ts.bak-20261013-082853`
+（改动前的原文件），覆盖回去 `npm run build` + `systemctl restart xspeak` 即可。
